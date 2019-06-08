@@ -248,6 +248,14 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	return nil
 }
 
+func (c *Client) GetContactNicknames() []string {
+	names := []string{}
+	for contact := range c.contactNicknames {
+		names = append(names, contact)
+	}
+	return names
+}
+
 // RemoveContact removes a contact from the Client's state.
 func (c *Client) RemoveContact(nickname string) {
 	c.removeContactChan <- nickname

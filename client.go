@@ -442,6 +442,10 @@ func (c *Client) readInbox() bool {
 	return false
 }
 
+func (c *Client) AwaitShutdown() {
+	<-c.HaltCh()
+}
+
 // worker goroutine takes ownership of our contacts
 func (c *Client) worker() {
 	c.readInboxPoissonTimer.Start()

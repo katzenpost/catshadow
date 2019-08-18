@@ -37,7 +37,6 @@ import (
 	"github.com/katzenpost/core/pki"
 	registration "github.com/katzenpost/registration_client"
 	"golang.org/x/crypto/ssh/terminal"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const (
@@ -87,7 +86,6 @@ func main() {
 		panic(err)
 	}
 
-	var shellLog *logging.Logger = nil
 	if *generate {
 		if _, err := os.Stat(*stateFile); !os.IsNotExist(err) {
 			panic("cannot generate state file, already exists")
@@ -170,7 +168,6 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("catshadow client successfully created")
-		shellLog = c.GetLogger("catshadow_shell")
 	} else {
 
 		// Load previous state to setup our current client state.
@@ -178,7 +175,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		shellLog = backendLog.GetLogger("catshadow_shell")
 		stateWorker, state, err = catshadow.LoadStateWriter(backendLog.GetLogger("state_worker"), *stateFile, passphrase)
 		if err != nil {
 			panic(err)
@@ -205,7 +201,6 @@ func main() {
 	fmt.Println("state worker started")
 	catShadowClient.Start()
 	fmt.Println("catshadow worker started")
-	fmt.Println("starting shell")
-	shell := NewShell(catShadowClient, shellLog)
-	shell.Run()
+
+	catShadowClient.AwaitShutdown()
 }

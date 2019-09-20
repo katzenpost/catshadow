@@ -3,9 +3,13 @@ image: "golang:1.13"
 before_script:
   - mkdir -p /go/src/github.com/katzenpost
   - cp -r /builds/katzenpost/* /go/src/github.com/katzenpost/
-  - cd /builds/katzenpost/catshadow/
-  - go get github.com/katzenpost/memspool/server/cmd/memspool
+  - go get github.com/katzenpost/memspool
+  - cd /go/src/github.com/katzenpost/memspool/server/cmd/memspool
+  - go install
   - go get github.com/katzenpost/panda/server/cmd/panda_server
+  - cd /go/src/github.com/katzenpost/panda/server/cmd/panda_server
+  - go install
+  - cd /builds/katzenpost/catshadow/
 
 test-catshadow:
   script:

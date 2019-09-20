@@ -27,6 +27,7 @@ import (
 
 	csConfig "github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
+	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/kimchi"
 	"github.com/stretchr/testify/require"
@@ -55,6 +56,7 @@ func TestCreateCatshadowClient(t *testing.T) {
 // returns a running CatshadowClient configured from kimchi
 func getCatshadowClient(k *kimchi.Kimchi) (*Client, error) {
 	cfg, username, linkKey, err := k.GetClientConfig()
+	cfg.Panda = &config.Panda{Receiver: "+panda", Provider: "provider-0", BlobSize: 1000,}
 	if err != nil {
 		return nil, err
 	}

@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -53,13 +54,92 @@ func TestCreateCatshadowClient(t *testing.T) {
 	k.Wait()
 }
 
+func TestCatshadowMessaging(t *testing.T) {
+	require := require.New(t)
+
+	k := kimchi.NewKimchi(basePort, "", nil, false, 0, 2, 6)
+	k.Run()
+	go func() {
+		defer k.Shutdown()
+		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
+
+		clients := make([]*Client, 0)
+		wg := new(sync.WaitGroup)
+		for i:=0; i<2;i++ {
+			client, err := getCatshadowClient(k)
+			require.NoError(err)
+			clients = append(clients, client)
+		}
+		// panda exchange between pairs of clients
+		for i, client := range clients {
+			pair := fmt.Sprintf("secret_pair %v", i % (len(clients) / 2))
+			contact := fmt.Sprintf("client-%v", i)
+			go func() {
+				t.Logf("secret_pair: %v with %v", pair, contact)
+				client.NewContact(contact, []byte(pair))
+				ch := client.EventsChan()
+				wg.Add(1)
+				go func(){
+					select {
+					case ev := <-ch:
+						_, ok := ev.(KeyExchangeCompleted)
+						require.NotNil(ok)
+					case <-time.After(60*time.Second):
+						// timed out..
+						t.Errorf("PANDA Exchange timed out")
+					}
+					wg.Done()
+				}()
+			}()
+		}
+		wg.Wait()
+
+		// Send messages between clients
+		for i, client := range clients {
+			contact := fmt.Sprintf("client-%v", i)
+			go func() {
+				t.Logf("Saying hello to %v", contact)
+				client.SendMessage(contact, []byte("hello, catshadow"))
+				ch := client.EventsChan()
+				wg.Add(1)
+				go func(){
+					select {
+					case ev := <-ch:
+						_, ok := ev.(MessageDelivered)
+						require.NotNil(ok)
+					case <-time.After(60*time.Second):
+						t.Errorf("SendMessage timed out")
+					}
+					wg.Done()
+				}()
+			}()
+		}
+
+		wg.Wait()
+
+		// turn it off!
+		for _, client := range clients {
+			cl := client
+			wg.Add(1)
+			go func() {
+				cl.Shutdown()
+				cl.Wait()
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+	}()
+	k.Wait()
+}
+
+
 // returns a running CatshadowClient configured from kimchi
 func getCatshadowClient(k *kimchi.Kimchi) (*Client, error) {
 	cfg, username, linkKey, err := k.GetClientConfig()
-	cfg.Panda = &config.Panda{Receiver: "+panda", Provider: "provider-0", BlobSize: 1000,}
 	if err != nil {
 		return nil, err
 	}
+	cfg.Panda = &config.Panda{Receiver: "+panda", Provider: "provider-0", BlobSize: 1000,}
 	// instantiate a client instance
 	c, err := client.New(cfg)
 	if err != nil {

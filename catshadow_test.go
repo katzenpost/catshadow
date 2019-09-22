@@ -61,7 +61,7 @@ func TestCatshadowMessaging(t *testing.T) {
 	k.Run()
 	go func() {
 		defer k.Shutdown()
-		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
+		<-time.After(90 * time.Second) // must wait for provider to fetch pki document
 
 		clients := make([]*Client, 0)
 		wg := new(sync.WaitGroup)

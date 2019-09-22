@@ -72,13 +72,14 @@ func TestCatshadowMessaging(t *testing.T) {
 		}
 		// panda exchange between pairs of clients
 		for i, client := range clients {
+			cl := client
 			pair := fmt.Sprintf("secret_pair %v", i % (len(clients) / 2))
 			contact := fmt.Sprintf("client-%v", i)
+			wg.Add(1)
 			go func() {
 				t.Logf("secret_pair: %v with %v", pair, contact)
-				client.NewContact(contact, []byte(pair))
-				ch := client.EventsChan()
-				wg.Add(1)
+				cl.NewContact(contact, []byte(pair))
+				ch := cl.EventsChan()
 				go func(){
 					select {
 					case ev := <-ch:
@@ -97,10 +98,11 @@ func TestCatshadowMessaging(t *testing.T) {
 		// Send messages between clients
 		for i, client := range clients {
 			contact := fmt.Sprintf("client-%v", i)
+			cl := client
 			go func() {
 				t.Logf("Saying hello to %v", contact)
-				client.SendMessage(contact, []byte("hello, catshadow"))
-				ch := client.EventsChan()
+				cl.SendMessage(contact, []byte("hello, catshadow"))
+				ch := cl.EventsChan()
 				wg.Add(1)
 				go func(){
 					select {

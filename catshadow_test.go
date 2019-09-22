@@ -66,6 +66,7 @@ func TestCatshadowMessaging(t *testing.T) {
 		clients := make([]*Client, 0)
 		wg := new(sync.WaitGroup)
 		for i:=0; i<2;i++ {
+			t.Logf("creating catshadow client..")
 			client, err := getCatshadowClient(k)
 			require.NoError(err)
 			clients = append(clients, client)
@@ -83,9 +84,14 @@ func TestCatshadowMessaging(t *testing.T) {
 				go func(){
 					select {
 					case ev := <-ch:
-						_, ok := ev.(KeyExchangeCompleted)
-						require.NotNil(ok)
-					case <-time.After(60*time.Second):
+						// what if it is another event?
+						if _, ok := ev.(KeyExchangeCompleted); ok {
+							t.Logf("PANDA KeyExchangeCompleted received")
+						} else {
+							t.Logf("%v", ev)
+							t.Errorf("Received unexpected event on EventsChan")
+						}
+					case <-time.After(120*time.Second):
 						// timed out..
 						t.Errorf("PANDA Exchange timed out")
 					}

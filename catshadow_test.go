@@ -82,6 +82,7 @@ func TestCatshadowMessaging(t *testing.T) {
 				cl.NewContact(contact, []byte(pair))
 				ch := cl.EventsChan()
 				go func(){
+					defer wg.Done()
 					select {
 					case ev := <-ch:
 						// what if it is another event?
@@ -95,7 +96,6 @@ func TestCatshadowMessaging(t *testing.T) {
 						// timed out..
 						t.Errorf("PANDA Exchange timed out")
 					}
-					wg.Done()
 				}()
 			}()
 		}
@@ -105,12 +105,13 @@ func TestCatshadowMessaging(t *testing.T) {
 		for i, client := range clients {
 			contact := fmt.Sprintf("client-%v", i)
 			cl := client
+			wg.Add(1)
 			go func() {
 				t.Logf("Saying hello to %v", contact)
 				cl.SendMessage(contact, []byte("hello, catshadow"))
 				ch := cl.EventsChan()
-				wg.Add(1)
 				go func(){
+					defer wg.Done()
 					select {
 					case ev := <-ch:
 						_, ok := ev.(MessageDelivered)
@@ -118,7 +119,6 @@ func TestCatshadowMessaging(t *testing.T) {
 					case <-time.After(60*time.Second):
 						t.Errorf("SendMessage timed out")
 					}
-					wg.Done()
 				}()
 			}()
 		}

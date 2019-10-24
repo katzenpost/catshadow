@@ -28,7 +28,7 @@ import (
 
 	"github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
-	cConfig "github.com/katzenpost/client/config"
+	//cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
@@ -41,9 +41,6 @@ func getClientState(c *Client) *State {
 	return &State{
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
-		LinkKey:             c.linkKey,
-		User:                c.user,
-		Provider:            c.client.Provider(),
 		Conversations:       c.GetAllConversations(),
 	}
 }
@@ -73,7 +70,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	cfg, err := catshadowCfg.ClientConfig()
 	require.NoError(err)
 
-	cfg, linkKey := client.AutoRegisterRandomClient(cfg)
+	cfg, linkKey := client.RandomKeyAndProvider(cfg)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
@@ -109,10 +106,8 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	passphrase := []byte("")
 	state, _, err := GetStateFromFile(stateFile, passphrase)
 	require.NoError(err)
-	cfg.Account = &cConfig.Account{
-		User:     state.User,
-		Provider: state.Provider,
-	}
+
+	cfg, linkKey := client.RandomKeyAndProvider(cfg)
 
 	logBackend, err := catshadowCfg.InitLogBackend()
 	require.NoError(err)
@@ -121,7 +116,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	stateWorker, state, err = LoadStateWriter(c.GetLogger("catshadow_state"), stateFile, passphrase)
 	require.NoError(err)
 
-	catShadowClient, err = New(logBackend, c, stateWorker, state)
+	catShadowClient, err = New(logBackend, c, stateWorker, state, linkKey)
 	require.NoError(err)
 
 	// Start catshadow client.

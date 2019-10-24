@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/catshadow/constants"
-	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/memspool/client"
@@ -50,9 +49,6 @@ type Message struct {
 type State struct {
 	SpoolReadDescriptor *client.SpoolReadDescriptor
 	Contacts            []*Contact
-	User                string
-	Provider            string
-	LinkKey             *ecdh.PrivateKey
 	Conversations       map[string]map[[constants.MessageIDLen]byte]*Message
 }
 

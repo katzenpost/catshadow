@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/katzenpost/client v0.0.8
 	github.com/katzenpost/core v0.0.11
-	github.com/katzenpost/doubleratchet v0.0.5-0.20200922092656-98a719838e60
+	github.com/katzenpost/doubleratchet v0.0.5-0.20200923174515-b332c6ea16b3
 	github.com/katzenpost/memspool v0.0.8
 	github.com/katzenpost/panda v0.0.9
 	github.com/stretchr/testify v1.4.0

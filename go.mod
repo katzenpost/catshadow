@@ -11,7 +11,6 @@ require (
 	github.com/katzenpost/memspool v0.0.8
 	github.com/katzenpost/panda v0.0.9
 	github.com/stretchr/testify v1.4.0
-	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
 	gopkg.in/eapache/channels.v1 v1.1.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473

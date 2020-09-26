@@ -388,8 +388,12 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 				panic(err)
 			}
 			go kx.Run()
+			return
+		} else {
+			c.log.Error("Received PANDA Update Err %s", update.Err)
 		}
 		contact.pandaResult = update.Err.Error()
+		contact.pandaKeyExchange = nil
 		contact.pandaShutdownChan = nil
 		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Err)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{

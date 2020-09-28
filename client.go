@@ -523,10 +523,16 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	_, err = c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
+	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
 	if err != nil {
 		c.log.Error("failed to send inbox retrieval message")
 		return
+	}
+	c.log.Debug("Message enqueued for reading remote spool %x, message-ID: %x", c.spoolReadDescriptor.ID, mesgID)
+	if sr, err := common.SpoolRequestFromBytes(cmd); err != nil {
+		panic(err)
+	} else {
+		c.sendMap.Store(*mesgID, &sr)
 	}
 }
 
@@ -536,49 +542,55 @@ func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected
 }
 
 func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
-	rawSentMessageDescriptor, ok := c.sendMap.Load(*sentEvent.MessageID)
+	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
-		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
-		if !typeOK {
+		switch tp := orig.(type) {
+		case *SentMessageDescriptor:
+			c.log.Debugf("MessageSentEvent for %x", tp.MessageID)
+			c.eventCh.In() <- &MessageSentEvent{
+				Nickname:  tp.Nickname,
+				MessageID: tp.MessageID,
+			}
+		case *common.SpoolRequest:
+			c.log.Debugf("MessageSentEvent SpoolRequest for %x %x", tp.SpoolID, tp.MessageID)
+		default:
 			c.sendMap.Delete(*sentEvent.MessageID)
-			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
-			return
-		}
-		c.eventCh.In() <- &MessageSentEvent{
-			Nickname:  sentMessageDescriptor.Nickname,
-			MessageID: sentMessageDescriptor.MessageID,
+			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
 		}
 	}
 }
 
 func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
-	defer c.sendMap.Delete(*replyEvent.MessageID)
 	spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
 	if err != nil {
 		c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
 		return
 	}
 	if !spoolResponse.IsOK() {
-		c.log.Errorf("Spool response status error: %s", spoolResponse.Status)
+		c.log.Errorf("Spool response ID %x status error: %s for SpoolID %x", spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 		return
 	}
 
-	// Here we handle replies from sending messages to a contact's remote queue.
-	rawSentMessageDescriptor, ok := c.sendMap.Load(*replyEvent.MessageID)
+	orig, ok := c.sendMap.Load(*replyEvent.MessageID)
 	if ok {
-		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
-		if !typeOK {
-			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
+		defer c.sendMap.Delete(*replyEvent.MessageID)
+		switch tp := orig.(type) {
+		case *SentMessageDescriptor:
+			// Here we handle replies from sending messages to a contact's remote queue.
+			c.log.Debugf("MessageDeliveredEvent for sent message  %x", *replyEvent.MessageID)
+			c.eventCh.In() <- &MessageDeliveredEvent{
+				Nickname:  tp.Nickname,
+				MessageID: tp.MessageID,
+			}
+		case *common.SpoolRequest:
+			// Here we handle replies from reading the remote spool
+			c.log.Debugf("Decrypting for %x", *replyEvent.MessageID)
+			c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
+		default:
+			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
 			return
 		}
-		c.eventCh.In() <- &MessageDeliveredEvent{
-			Nickname:  sentMessageDescriptor.Nickname,
-			MessageID: sentMessageDescriptor.MessageID,
-		}
-		return
 	}
-	// Here we handle replies from remote queue message retrievals.
-	c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 }
 
 func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
@@ -616,9 +628,8 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 	}
 	if decrypted {
-		c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
 		convoMesgID := MessageID{}
-		_, err := rand.Reader.Read(convoMesgID[:])
+		_, err = rand.Reader.Read(convoMesgID[:])
 		if err != nil {
 			c.fatalErrCh <- err
 		}
@@ -635,6 +646,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			Message:   message.Plaintext,
 			Timestamp: message.Timestamp,
 		}
+		defer c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
 		return
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID, err)

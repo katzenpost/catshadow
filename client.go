@@ -63,6 +63,7 @@ type Client struct {
 	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
 	conversations       map[string]map[MessageID]*Message
 	conversationsMutex  *sync.Mutex
+	nReadInbox          uint // number of issued ReadInbox commands
 
 	client  *client.Client
 	session *client.Session
@@ -72,6 +73,8 @@ type Client struct {
 }
 
 type MessageID [MessageIDLen]byte
+
+var maxReadInbox uint = 3
 
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
@@ -518,11 +521,19 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 
 func (c *Client) sendReadInbox() {
 	sequence := c.spoolReadDescriptor.ReadOffset
+	// if we are sending these requests faster than we are actually dispatching them, this sucks.
+
 	cmd, err := common.ReadFromSpool(c.spoolReadDescriptor.ID, sequence, c.spoolReadDescriptor.PrivateKey)
 	if err != nil {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
+	// maybe send readInbox
+	if c.nReadInbox > maxReadInbox {
+		return
+	}
+	c.nReadInbox += 1
+
 	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
 	if err != nil {
 		c.log.Error("failed to send inbox retrieval message")
@@ -573,6 +584,9 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Errorf("Spool response ID %x status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 					// XXX: should emit an event to the client ? eg spool write failure
+				if tp.Nickname == c.user {
+					c.nReadInbox -= 1
+				}
 				return
 			}
 			if tp.Nickname != c.user {
@@ -594,6 +608,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 
 			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d",  spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
 			c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
+			c.nReadInbox -= 1
 			c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 			return
 		default:

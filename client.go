@@ -585,6 +585,8 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d",  spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message))
 			c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 			c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
+			// increment the descriptor, even if it was replayed, otherwise we get stuck in a loop where this never advances
+			c.spoolReadDescriptor.IncrementOffset()
 			return
 		default:
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
@@ -647,7 +649,6 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			Message:   message.Plaintext,
 			Timestamp: message.Timestamp,
 		}
-		defer c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
 		return
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)

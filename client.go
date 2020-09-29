@@ -542,16 +542,16 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	if ok {
 		switch tp := orig.(type) {
 		case *SentMessageDescriptor:
-			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			if tp.Nickname == c.user { // ack for readInbox
+				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
 				return
 			}
+			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
 				MessageID: tp.MessageID,
 			}
 		default:
-			c.sendMap.Delete(*sentEvent.MessageID)
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
 		}
 	}

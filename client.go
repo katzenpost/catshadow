@@ -587,11 +587,12 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 
 			// is a valid response to the tip of our spool, so increment the pointer
 			off := binary.BigEndian.Uint32(tp.MessageID[:4])
-			if off == c.spoolReadDescriptor.ReadOffset {
+			if off >= c.spoolReadDescriptor.ReadOffset {
 				c.spoolReadDescriptor.IncrementOffset()
+				c.log.Debugf("Incremented spoolReadDescriptor to %d", c.spoolReadDescriptor.ReadOffset)
 			}
 
-			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d",  spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message))
+			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d",  spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
 			c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 			c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 			return

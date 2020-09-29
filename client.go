@@ -529,7 +529,9 @@ func (c *Client) sendReadInbox() {
 		return
 	}
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
-	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname:c.user})
+	var a MessageID
+	binary.BigEndian.PutUint32(a[:4], sequence)
+	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname:c.user, MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -582,11 +584,16 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				}
 				return
 			}
+
+			// is a valid response to the tip of our spool, so increment the pointer
+			off := binary.BigEndian.Uint32(tp.MessageID[:4])
+			if off == c.spoolReadDescriptor.ReadOffset {
+				c.spoolReadDescriptor.IncrementOffset()
+			}
+
 			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d",  spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message))
 			c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 			c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
-			// increment the descriptor, even if it was replayed, otherwise we get stuck in a loop where this never advances
-			c.spoolReadDescriptor.IncrementOffset()
 			return
 		default:
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")

@@ -96,6 +96,7 @@ github.com/katzenpost/memspool v0.0.7 h1:/Bs+CcIyXtwYTDM+HygkFX5h4On/h0/BxUHJ6zn
 github.com/katzenpost/memspool v0.0.7/go.mod h1:24FkWsMX/J5AM9RFlK+CND+paONoVYSrAhESuUmnZOQ=
 github.com/katzenpost/memspool v0.0.8 h1:F3iGxB9FbTXJ4XBrrkhYJO3jyL8ajsP3NvduKR5CEAg=
 github.com/katzenpost/memspool v0.0.8/go.mod h1:FsE+f7OdDvUKzFvsjwelRtaSDmcDPvvAkesF+OIkQGg=
+github.com/katzenpost/memspool v0.0.9 h1:eFVD3Ke7NzyTWAG4A3D37B5/vFy2UdlqOi+H9wbr15Q=
 github.com/katzenpost/memspool v0.0.9/go.mod h1:FsE+f7OdDvUKzFvsjwelRtaSDmcDPvvAkesF+OIkQGg=
 github.com/katzenpost/minclient v0.0.8 h1:oDdSQzmgXzpMvFjYxOpOW37wf6HOCR13sc0en0UHd5Q=
 github.com/katzenpost/minclient v0.0.8/go.mod h1:jjFDNK1YxG0pjVwkbAjKS6jnFXmZRpcPeARwhaCNClE=

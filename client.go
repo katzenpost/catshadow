@@ -528,7 +528,7 @@ func (c *Client) sendReadInbox() {
 		c.log.Error("failed to send inbox retrieval message")
 		return
 	}
-	c.log.Debug("Message enqueued for reading remote spool %x, message-ID: %x", c.spoolReadDescriptor.ID, mesgID)
+	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname:c.user})
 }
 

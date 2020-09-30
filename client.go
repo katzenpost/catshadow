@@ -602,15 +602,21 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 
 			// is a valid response to the tip of our spool, so increment the pointer
 			off := binary.BigEndian.Uint32(tp.MessageID[:4])
-			if off >= c.spoolReadDescriptor.ReadOffset {
-				c.spoolReadDescriptor.IncrementOffset()
-				c.log.Debugf("Incremented spoolReadDescriptor to %d", c.spoolReadDescriptor.ReadOffset)
-			}
 
-			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d",  spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
+			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d", spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
 			c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 			c.nReadInbox -= 1
-			c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
+			switch {
+			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
+				return // dup
+			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
+				c.spoolReadDescriptor.IncrementOffset()
+				if !c.decryptMessage(replyEvent.MessageID, spoolResponse.Message) {
+					panic("failure to decrypt tip of spool")
+				}
+			default:
+				panic("received spool response for MessageID not requested yet")
+			}
 			return
 		default:
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
@@ -631,10 +637,10 @@ func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 	return c.conversations
 }
 
-func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) {
+func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) (decrypted bool) {
 	var err error
 	message := Message{}
-	var decrypted bool
+	decrypted = false
 	var nickname string
 	for _, contact := range c.contacts {
 		if contact.IsPending {

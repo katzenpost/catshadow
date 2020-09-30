@@ -543,7 +543,7 @@ func (c *Client) sendReadInbox() {
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname:c.user, MessageID: a})
+	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname: c.user, MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -575,7 +575,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	if ev, ok := c.sendMap.Load(*replyEvent.MessageID); ok {
 		defer c.sendMap.Delete(replyEvent.MessageID)
 		switch tp := ev.(type) {
-                case *SentMessageDescriptor:
+		case *SentMessageDescriptor:
 			spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
 			if err != nil {
 				c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
@@ -584,7 +584,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			if !spoolResponse.IsOK() {
 				c.log.Errorf("Spool response ID %x status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
-					// XXX: should emit an event to the client ? eg spool write failure
+				// XXX: should emit an event to the client ? eg spool write failure
 				if tp.Nickname == c.user {
 					c.nReadInbox -= 1
 				}

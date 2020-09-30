@@ -359,7 +359,6 @@ func TestDockerSendReceive(t *testing.T) {
 		}
 	}()
 
-
 	<-bobKXFinishedChan
 	<-aliceKXFinishedChan
 	<-malKXFinishedChan

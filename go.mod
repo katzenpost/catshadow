@@ -7,7 +7,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/katzenpost/client v0.0.9-0.20200930100131-4c27a1fc68e2
 	github.com/katzenpost/core v0.0.11
-	github.com/katzenpost/doubleratchet v0.0.5-0.20200927215628-bf9f599459cc
+	github.com/katzenpost/doubleratchet v0.0.5-0.20200930150420-4babc902f978
 	github.com/katzenpost/memspool v0.0.9
 	github.com/katzenpost/panda v0.0.10
 	github.com/stretchr/testify v1.4.0

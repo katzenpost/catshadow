@@ -96,6 +96,10 @@ type Contact struct {
 	// spoolWriteDescriptor is a description of a remotely writable spool
 	// which we must write to in order to send this contact a message.
 	spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
+
+	// unACKed tracks the number of messages written to a contact without
+	// delivery confirmation
+	unACKed uint
 }
 
 // NewContact creates a new Contact or returns an error.

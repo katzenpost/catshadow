@@ -76,6 +76,7 @@ github.com/katzenpost/client v0.0.9-0.20200930100131-4c27a1fc68e2 h1:c+dnUQogDi2
 github.com/katzenpost/client v0.0.9-0.20200930100131-4c27a1fc68e2/go.mod h1:6FZU7dl7pmcWSs2RUl3ozDU7Sfqe8D138pdzEGcezCE=
 github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDNU=
 github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
+github.com/katzenpost/doubleratchet v0.0.4 h1:yZe+BVx2EWWuRz1loauNsM5ggYlydWd+rX50831x1gk=
 github.com/katzenpost/doubleratchet v0.0.5-0.20200927215628-bf9f599459cc h1:2NnyTwkjbIcWpniYcRkEDEJZv2kmBuYEYK539LSWzpg=
 github.com/katzenpost/doubleratchet v0.0.5-0.20200927215628-bf9f599459cc/go.mod h1:odNOjX2+Ypjp2OZuyB7fcLc7CYcBkBMcDBiicwi7Xno=
 github.com/katzenpost/doubleratchet v0.0.5-0.20200930150420-4babc902f978 h1:sDo3ny/8hIOqyeSHkUNYzA+6Itt5AkUy4Eid1iLaMUU=

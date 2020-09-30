@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
@@ -495,6 +496,18 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		return
 	}
 
+	if contact.unACKed >= ratchet.MaxMissingMessages {
+		// we've sent more messages than the remote ratchet
+		// can safely reconstruct if an out-of-order message
+		// arrives at head of the queue before our other
+		// messages have arrived
+		// XXX: should ideally send some kind of feedback to the client
+		// so that it can inform the consumer that it is write limited..
+		panic("err")
+	} else {
+		contact.unACKed += 1
+	}
+
 	payload := [DoubleRatchetPayloadLength]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
@@ -529,10 +542,7 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	// maybe send readInbox
-	if c.nReadInbox > maxReadInbox {
-		c.log.Debugf("nReadInbox: %d", c.nReadInbox)
-	}
+	c.log.Debugf("nReadInbox: %d", c.nReadInbox)
 	c.nReadInbox += 1
 
 	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
@@ -593,6 +603,13 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			if tp.Nickname != c.user {
 				// Is a Message Delivery acknowledgement for a spool write
 				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+				c.conversationsMutex.Lock()
+				contact, ok := c.contactNicknames[tp.Nickname]
+				if !ok {
+					panic("bug")
+				}
+				contact.unACKed -= 1
+				c.conversationsMutex.Unlock()
 				c.eventCh.In() <- &MessageDeliveredEvent{
 					Nickname:  tp.Nickname,
 					MessageID: tp.MessageID,

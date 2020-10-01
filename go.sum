@@ -80,6 +80,8 @@ github.com/katzenpost/doubleratchet v0.0.5-0.20200930150420-4babc902f978 h1:sDo3
 github.com/katzenpost/doubleratchet v0.0.5-0.20200930150420-4babc902f978/go.mod h1:odNOjX2+Ypjp2OZuyB7fcLc7CYcBkBMcDBiicwi7Xno=
 github.com/katzenpost/memspool v0.0.10 h1:Vcs4yInKN5cdauthKzcd9/PkU5WliY+untQWlUHPozc=
 github.com/katzenpost/memspool v0.0.10/go.mod h1:NZGtvAV25MHASCTYFMdHn7I4r0BsXlSdE7kLTauBeH4=
+github.com/katzenpost/memspool v0.0.11 h1:HfHBqXz1Rlv3N/dU30BkKEDP4GqnQXPvQbOeSHCSANU=
+github.com/katzenpost/memspool v0.0.11/go.mod h1:NZGtvAV25MHASCTYFMdHn7I4r0BsXlSdE7kLTauBeH4=
 github.com/katzenpost/minclient v0.0.8 h1:oDdSQzmgXzpMvFjYxOpOW37wf6HOCR13sc0en0UHd5Q=
 github.com/katzenpost/minclient v0.0.8/go.mod h1:jjFDNK1YxG0pjVwkbAjKS6jnFXmZRpcPeARwhaCNClE=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=

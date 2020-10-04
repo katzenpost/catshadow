@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
@@ -72,6 +74,28 @@ type Client struct {
 }
 
 type MessageID [MessageIDLen]byte
+
+type msgWithID struct {
+	*Message
+	mID MessageID
+}
+
+type Messages []*msgWithID
+
+// Len is part of sort.Interface.
+func (d Messages) Len() int {
+	return len(d)
+}
+
+// Swap is part of sort.Interface.
+func (d Messages) Swap(i, j int) {
+	d[i], d[j] = d[j], d[i]
+}
+
+// Less is part of sort.Interface.
+func (d Messages) Less(i, j int) bool {
+	return d[i].Timestamp.Before(d[j].Timestamp)
+}
 
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
@@ -192,6 +216,10 @@ func (c *Client) garbageCollectConversations() {
 	defer c.conversationsMutex.Unlock()
 	for _, messages := range c.conversations {
 		for mesgID, message := range messages {
+			if message.Outbound && message.Delivered {
+				// do not need to keep the Ciphertext around any longer
+				message.Ciphertext = []byte{}
+			}
 			if time.Now().After(message.Timestamp.Add(MessageExpirationDuration)) {
 				delete(messages, mesgID)
 			}
@@ -488,15 +516,25 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		return
 	}
 
+	// XXX: I would prefer to refactor the contact message storage model
+	// and use a serializable queue per contact
+	// and deliver messages in-order to the remote queue
+	// rather than allow fwd messages to be delivered in whatever order
+	if contact.UnACKed == ratchet.MaxMissingMessages-1 {
+		c.log.Errorf("cannot send message, contact %s's spool has not received %d messages", contact.UnACKed)
+		// XXX: either enqueue the message for sending later or just return and let the client deal with it
+		// XXX: prod the worker to retransmit undelivered messages for this contact
+		c.doRetransmit(contact)
+	}
+
 	payload := [DoubleRatchetPayloadLength]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
-	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
+	outMessage.Ciphertext = contact.ratchet.Encrypt(nil, payload[:])
 	contact.ratchetMutex.Unlock()
-	c.save()
 
-	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
+	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, outMessage.Ciphertext)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
 		return
@@ -506,11 +544,55 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
 	}
+	contact.UnACKed += 1
+	c.save()
 	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
 		Nickname:  nickname,
 		MessageID: convoMesgID,
 	})
+}
+
+func (c *Client) doRetransmit(contact *Contact) error {
+	convMap, ok := c.conversations[contact.Nickname]
+	if !ok {
+		return fmt.Errorf("Retransmit failure: No conversations found for %s", contact.Nickname)
+	}
+	// range over the messages in the conversation, filtering for messages that are undelivered
+	// sort the undelivered messages by their sent timestamp
+	// push all the messages into the send queue for retransmission
+
+	// it's pretty bad that messages are stored in a map
+	// and need to be sorted to display in correct order every time
+	rTx := Messages{}
+	for mID, msg := range convMap {
+		if msg.Outbound && !msg.Delivered && msg.Sent {
+			mwid := &msgWithID{msg, mID}
+			rTx = append(rTx, mwid)
+		}
+	}
+	// sort by timestamp
+	sort.Sort(rTx)
+
+	someLimit := 4 // ok whatever
+	for _, msg := range rTx[:someLimit] {
+		appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, msg.Ciphertext)
+		if err != nil {
+			c.log.Errorf("failed to compute spool append command: %s", err)
+			return err
+		}
+		mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
+		if err != nil {
+			c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
+			return err
+		}
+		c.log.Debug("Message enqueued for retransmission to %s, message-ID: %x", contact.Nickname, mesgID)
+		c.sendMap.Store(*mesgID, &SentMessageDescriptor{
+			Nickname:  contact.Nickname,
+			MessageID: msg.mID,
+		})
+	}
+	return nil
 }
 
 func (c *Client) sendReadInbox() {
@@ -545,6 +627,16 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
 				return
 			}
+			// update the Message Sent status
+			c.conversationsMutex.Lock()
+			if convo, ok := c.conversations[tp.Nickname]; ok {
+				if msg, ok := convo[tp.MessageID]; ok {
+					msg.Sent = true
+					// XXX: expensive to flush to disk on every mesg status change
+					c.save()
+				}
+			}
+			c.conversationsMutex.Unlock()
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
@@ -574,6 +666,22 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			}
 			if tp.Nickname != c.user {
 				// Is a Message Delivery acknowledgement for a spool write
+				// update the Message Delivered status
+				c.conversationsMutex.Lock()
+				if convo, ok := c.conversations[tp.Nickname]; ok {
+					if msg, ok := convo[tp.MessageID]; ok {
+						if contact, ok := c.contactNicknames[tp.Nickname]; ok && contact.UnACKed > 0 {
+							contact.UnACKed -= 1
+						} else {
+							panic("bug")
+						}
+						msg.Delivered = true
+						msg.Ciphertext = []byte{} // no need to keep around
+						c.save()
+					}
+				}
+				c.conversationsMutex.Unlock()
+
 				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
 				c.eventCh.In() <- &MessageDeliveredEvent{
 					Nickname:  tp.Nickname,

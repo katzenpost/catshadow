@@ -42,9 +42,12 @@ const (
 
 // Message encapsulates message that is sent or received.
 type Message struct {
-	Plaintext []byte
-	Timestamp time.Time
-	Outbound  bool
+	Plaintext  []byte
+	Ciphertext []byte // for retransmissions?
+	Delivered  bool   // delivered? or sent? or both?
+	Sent       bool   // delivered? or sent? or both?
+	Timestamp  time.Time
+	Outbound   bool
 }
 
 // State is the struct type representing the Client's state

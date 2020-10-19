@@ -28,6 +28,10 @@ before_script:
   - go install
   - cd /builds/katzenpost/catshadow/
 
+reuse:
+  image:
+    name: fsfe/reuse:latest
+
 test-catshadow:
   script:
     - mkdir -p coverage

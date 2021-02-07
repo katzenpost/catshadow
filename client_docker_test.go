@@ -26,12 +26,15 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
 	cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,8 +96,18 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	require.NoError(err)
 
 	user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+	// XXX: this can time out because it is UNRELIABLE
+	tries := 3
+	err = nil
+	for ; tries > 0; tries-- {
+		catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, username, linkKey)
+		if err != client.ErrReplyTimeout || err == nil {
+			break
+		}
+		t.Log("NewClientAndRemoteSpool timed out")
+	}
 	require.NoError(err)
+	t.Log("NewClientAndRemoteSpool created a contact and remote spool")
 
 	// Start catshadow client.
 	catShadowClient.Start()
@@ -544,4 +557,220 @@ loop2:
 
 	alice.Shutdown()
 	bob.Shutdown()
+}
+
+// This test must fail or else everything works
+func TestTillDistress(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	if deadline, ok := t.Deadline(); ok {
+		timeLeft := deadline.Sub(time.Now())
+		if timeLeft < 4*time.Minute {
+			t.Skipf("Forget it, this test needs longer than %s to run to be useful", timeLeft)
+		}
+	}
+
+	aliceStateFilePath := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
+	bobStateFilePath := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
+
+	sharedSecret := []byte("blah")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
+	t.Log("Alice adds contact bob")
+	alice.NewContact("bob", sharedSecret)
+	t.Log("Bob adds contact alice")
+	bob.NewContact("alice", sharedSecret)
+
+	bobKXFinishedChan := make(chan bool)
+	bobDeliveredChan := make(chan bool, 1)
+	bobReceivedChan := make(chan bool, 1)
+
+	haltCh := make(chan interface{})
+
+	var wait sync.WaitGroup
+	wait.Add(4)
+
+	// keep track of the last time a message was received by each client
+	var aliceLast, bobLast time.Time
+	go func() {
+		for {
+			select {
+			case <-haltCh:
+				t.Log("haltCh closed!")
+				close(bobKXFinishedChan)
+				close(bobDeliveredChan)
+				close(bobReceivedChan)
+				wait.Done()
+				return
+			case ev := <-bob.EventSink:
+				switch event := ev.(type) {
+				case *KeyExchangeCompletedEvent:
+					require.Nil(event.Err)
+					bobKXFinishedChan <- true
+					bob.log.Debug("BOB completed key exchange")
+				case *MessageReceivedEvent:
+					// fields: Nickname, Message, Timestamp
+					bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+					bobLast = time.Now()
+					bobReceivedChan <- true
+				case *MessageDeliveredEvent:
+					require.Equal(event.Nickname, "alice")
+					bobDeliveredChan <- true
+				case *MessageSentEvent:
+					bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
+					require.Equal(event.Nickname, "alice")
+				default:
+					bob.log.Debugf("BOB event %v", event)
+				}
+			}
+		}
+	}()
+
+	aliceKXFinishedChan := make(chan bool)
+	aliceDeliveredChan := make(chan bool, 1)
+	aliceReceivedChan := make(chan bool, 1)
+	go func() {
+		for {
+			select {
+			case <-haltCh:
+				t.Log("haltCh closed!")
+				close(aliceKXFinishedChan)
+				close(aliceDeliveredChan)
+				close(aliceReceivedChan)
+				wait.Done()
+				return
+			case ev := <-alice.EventSink:
+				switch event := ev.(type) {
+				case *KeyExchangeCompletedEvent:
+					require.Nil(event.Err)
+					aliceKXFinishedChan <- true
+					alice.log.Debug("ALICE completed key exchange")
+				case *MessageReceivedEvent:
+					// fields: Nickname, Message, Timestamp
+					alice.log.Debugf("ALICE RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+					aliceLast = time.Now()
+					aliceReceivedChan <- true
+				case *MessageDeliveredEvent:
+					require.Equal(event.Nickname, "bob")
+					aliceDeliveredChan <- true
+				case *MessageSentEvent:
+					alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
+					require.Equal(event.Nickname, "bob")
+				default:
+					alice.log.Debugf("ALICE event %v", event)
+				}
+			}
+		}
+	}()
+
+	<-bobKXFinishedChan
+	<-aliceKXFinishedChan
+	aliceLast = time.Now()
+	bobLast = time.Now()
+
+	i := 0
+	go func() {
+		t.Logf("Alice has joined the chat")
+		for {
+			select {
+			case <-haltCh:
+				t.Log("haltCh closed!")
+				wait.Done()
+				return
+			default:
+			}
+
+			msg := fmt.Sprintf("hi bob, it's the %d time i call you...", i)
+			alice.SendMessage("bob", []byte(msg))
+			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
+			if _, ok := <-aliceDeliveredChan; !ok {
+				continue
+			}
+			if _, ok := <-bobReceivedChan; !ok {
+				continue
+			}
+			i++
+		}
+	}()
+	j := 0
+	go func() {
+		t.Logf("Bob has joined the chat")
+		for {
+			select {
+			case <-haltCh:
+				t.Log("haltCh closed!")
+				wait.Done()
+				return
+			default:
+			}
+
+			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", j)
+			bob.SendMessage("alice", []byte(msg))
+			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
+			if _, ok := <-bobDeliveredChan; !ok {
+				continue
+			}
+			if _, ok := <-aliceReceivedChan; !ok {
+				continue
+			}
+			j++
+		}
+	}()
+
+	// start a timer that fires shortly before the testing framework will
+	// terminate the test suite. It is recommended to pass a larger -timeout
+	// value to thoroughly test message delivery
+	go func() {
+		deadline, ok := t.Deadline()
+		if !ok { // called with -timeout 0, but do not run forever
+			deadline = time.Now().Add(24 * time.Hour)
+		}
+		// when we will halt the test
+		testTimeout := deadline.Sub(time.Now().Add(5 * time.Second))
+		// the maximum delay between receiving a message or failing this test
+		threshold := 5 * time.Minute
+		timer := time.After(testTimeout)
+		t.Logf("This test will run for %s", testTimeout)
+		for {
+			select {
+			case <-timer:
+				t.Log("Time is up!")
+				close(haltCh)
+				return
+			case <-alice.HaltCh():
+				t.Errorf("Client exited prematurely!")
+				close(haltCh)
+				return
+			case <-bob.HaltCh():
+				t.Errorf("Client exited prematurely!")
+				close(haltCh)
+				return
+			case <-time.After(threshold):
+				// require that both clients received a message within the last minute or fail
+				now := time.Now()
+				t.Logf("Alice last received %s ago", now.Sub(aliceLast))
+				t.Logf("Bob last received %s ago", now.Sub(bobLast))
+				if !assert.WithinDuration(now, bobLast, threshold) || !assert.WithinDuration(now, aliceLast, threshold) {
+					t.Errorf("Failed to receive a message within %s", threshold)
+					close(haltCh)
+					return
+				}
+			}
+		}
+	}()
+
+	wait.Wait()
+	// assert at least some messages were received on both sides
+	require.GreaterOrEqual(i, 1)
+	require.GreaterOrEqual(j, 0)
+	t.Log("Shutdown clients!")
+	alice.Shutdown()
+	bob.Shutdown()
+	t.Log("Clients Shutdown!")
 }

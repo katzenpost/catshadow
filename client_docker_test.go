@@ -26,7 +26,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
@@ -93,8 +95,18 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	require.NoError(err)
 
 	user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+	// XXX: this can time out because it is UNRELIABLE
+	tries := 3
+	err = nil
+	for ; tries >0; tries-- {
+		catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+		if err != client.ErrReplyTimeout || err == nil {
+			break
+		}
+		t.Log("NewClientAndRemoteSpool timed out")
+	}
 	require.NoError(err)
+	t.Log("NewClientAndRemoteSpool created a contact and remote spool")
 
 	// Start catshadow client.
 	catShadowClient.Start()
@@ -542,6 +554,137 @@ loop2:
 		}
 	}
 
+	alice.Shutdown()
+	bob.Shutdown()
+}
+
+// This test must fail or else everything works
+func TestTillDistress(t *testing.T) {
+	require := require.New(t)
+
+	aliceStateFilePath := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
+	bobStateFilePath := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
+
+	sharedSecret := []byte("blah")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
+	t.Log("Alice adds contact bob")
+	alice.NewContact("bob", sharedSecret)
+	t.Log("Bob adds contact alice")
+	bob.NewContact("alice", sharedSecret)
+
+	bobKXFinishedChan := make(chan bool)
+	bobReceivedMessageChan := make(chan bool)
+	bobSentChan := make(chan bool)
+	bobDeliveredChan := make(chan bool)
+	go func() {
+		for {
+			ev := <-bob.EventSink
+			switch event := ev.(type) {
+			case *KeyExchangeCompletedEvent:
+				require.Nil(event.Err)
+				bobKXFinishedChan <- true
+				bob.log.Debug("BOB completed key exchange")
+			case *MessageReceivedEvent:
+				// fields: Nickname, Message, Timestamp
+				bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+				bobReceivedMessageChan <- true
+			case *MessageDeliveredEvent:
+				require.Equal(event.Nickname, "alice")
+				bobDeliveredChan <- true
+			case *MessageSentEvent:
+				bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
+				require.Equal(event.Nickname, "alice")
+				bobSentChan <- true
+			default:
+				bob.log.Debugf("BOB event %v", event)
+			}
+		}
+	}()
+
+	aliceKXFinishedChan := make(chan bool)
+	aliceReceivedMessageChan := make(chan bool)
+	aliceSentChan := make(chan bool)
+	aliceDeliveredChan := make(chan bool)
+	go func() {
+		for {
+			ev := <-alice.EventSink
+			switch event := ev.(type) {
+			case *KeyExchangeCompletedEvent:
+				require.Nil(event.Err)
+				aliceKXFinishedChan <- true
+				alice.log.Debug("ALICE completed key exchange")
+			case *MessageReceivedEvent:
+				// fields: Nickname, Message, Timestamp
+				alice.log.Debugf("ALICE RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+				aliceReceivedMessageChan <- true
+			case *MessageDeliveredEvent:
+				require.Equal(event.Nickname, "bob")
+				aliceDeliveredChan <- true
+			case *MessageSentEvent:
+				alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
+				require.Equal(event.Nickname, "bob")
+				aliceSentChan <- true
+			default:
+				alice.log.Debugf("ALICE event %v", event)
+			}
+		}
+	}()
+
+	<-bobKXFinishedChan
+	<-aliceKXFinishedChan
+
+	// start a timer that fires after ... 40 minutes lol
+	// if the condition has fired, exit the loop
+
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		i := 0
+		t.Logf("Alice has joined the chat")
+		for {
+			select {
+			case <-time.After(40* time.Minute):
+				wait.Done()
+				return
+			default:
+			}
+
+			msg := fmt.Sprintf("hi bob, it's the %d time i call you...", i)
+			alice.SendMessage("bob", []byte(msg))
+			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
+			<-aliceSentChan
+			<-aliceDeliveredChan
+			i++
+		}
+	}()
+	go func() {
+		i := 0
+		t.Logf("Bob has joined the chat")
+		for {
+			select {
+			case <-time.After(40*time.Minute):
+				wait.Done()
+				return
+			default:
+			}
+
+			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", i)
+			bob.SendMessage("alice", []byte(msg))
+			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
+			<-bobSentChan
+			<-bobDeliveredChan
+			i++
+		}
+	}()
+	wait.Wait()
+
+	// omfg success
 	alice.Shutdown()
 	bob.Shutdown()
 }

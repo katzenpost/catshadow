@@ -139,7 +139,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
 		session:             session,
-		log:                 logBackend.GetLogger("catshadow"),
+		log:                 logBackend.GetLogger("catshadow "+state.User),
 		logBackend:          logBackend,
 	}
 	for _, contact := range state.Contacts {

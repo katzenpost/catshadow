@@ -659,6 +659,7 @@ func TestTillDistress(t *testing.T) {
 			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
 			<-aliceSentChan
 			<-aliceDeliveredChan
+			<-bobReceivedMessageChan
 			i++
 		}
 	}()
@@ -678,6 +679,7 @@ func TestTillDistress(t *testing.T) {
 			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
 			<-bobSentChan
 			<-bobDeliveredChan
+			<-aliceReceivedMessageChan
 			i++
 		}
 	}()

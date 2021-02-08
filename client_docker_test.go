@@ -577,10 +577,10 @@ func TestTillDistress(t *testing.T) {
 	t.Log("Bob adds contact alice")
 	bob.NewContact("alice", sharedSecret)
 
-	bobKXFinishedChan := make(chan bool)
-	bobReceivedMessageChan := make(chan bool)
-	bobSentChan := make(chan bool)
-	bobDeliveredChan := make(chan bool)
+	bobKXFinishedChan := make(chan bool, 10)
+	bobReceivedMessageChan := make(chan bool, 10)
+	bobSentChan := make(chan bool, 10)
+	bobDeliveredChan := make(chan bool, 10)
 	go func() {
 		for {
 			ev := <-bob.EventSink
@@ -606,10 +606,10 @@ func TestTillDistress(t *testing.T) {
 		}
 	}()
 
-	aliceKXFinishedChan := make(chan bool)
-	aliceReceivedMessageChan := make(chan bool)
-	aliceSentChan := make(chan bool)
-	aliceDeliveredChan := make(chan bool)
+	aliceKXFinishedChan := make(chan bool, 10)
+	aliceReceivedMessageChan := make(chan bool, 10)
+	aliceSentChan := make(chan bool, 10)
+	aliceDeliveredChan := make(chan bool, 10)
 	go func() {
 		for {
 			ev := <-alice.EventSink

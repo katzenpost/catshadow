@@ -581,27 +581,43 @@ func TestTillDistress(t *testing.T) {
 	bobReceivedMessageChan := make(chan bool, 10)
 	bobSentChan := make(chan bool, 10)
 	bobDeliveredChan := make(chan bool, 10)
+
+	haltCh := make(chan interface{})
+
+	var wait sync.WaitGroup
+	wait.Add(4)
+
 	go func() {
 		for {
-			ev := <-bob.EventSink
-			switch event := ev.(type) {
-			case *KeyExchangeCompletedEvent:
-				require.Nil(event.Err)
-				bobKXFinishedChan <- true
-				bob.log.Debug("BOB completed key exchange")
-			case *MessageReceivedEvent:
-				// fields: Nickname, Message, Timestamp
-				bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
-				bobReceivedMessageChan <- true
-			case *MessageDeliveredEvent:
-				require.Equal(event.Nickname, "alice")
-				bobDeliveredChan <- true
-			case *MessageSentEvent:
-				bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
-				require.Equal(event.Nickname, "alice")
-				bobSentChan <- true
-			default:
-				bob.log.Debugf("BOB event %v", event)
+			select {
+			case <-haltCh:
+				t.Log("haltCh closed!")
+				close(bobKXFinishedChan)
+				close(bobReceivedMessageChan)
+				close(bobDeliveredChan)
+				close(bobSentChan)
+				wait.Done()
+				return
+			case ev := <-bob.EventSink:
+				switch event := ev.(type) {
+				case *KeyExchangeCompletedEvent:
+					require.Nil(event.Err)
+					bobKXFinishedChan <- true
+					bob.log.Debug("BOB completed key exchange")
+				case *MessageReceivedEvent:
+					// fields: Nickname, Message, Timestamp
+					bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+					bobReceivedMessageChan <- true
+				case *MessageDeliveredEvent:
+					require.Equal(event.Nickname, "alice")
+					bobDeliveredChan <- true
+				case *MessageSentEvent:
+					bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
+					require.Equal(event.Nickname, "alice")
+					bobSentChan <- true
+				default:
+					bob.log.Debugf("BOB event %v", event)
+				}
 			}
 		}
 	}()
@@ -612,25 +628,35 @@ func TestTillDistress(t *testing.T) {
 	aliceDeliveredChan := make(chan bool, 10)
 	go func() {
 		for {
-			ev := <-alice.EventSink
-			switch event := ev.(type) {
-			case *KeyExchangeCompletedEvent:
-				require.Nil(event.Err)
-				aliceKXFinishedChan <- true
-				alice.log.Debug("ALICE completed key exchange")
-			case *MessageReceivedEvent:
-				// fields: Nickname, Message, Timestamp
-				alice.log.Debugf("ALICE RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
-				aliceReceivedMessageChan <- true
-			case *MessageDeliveredEvent:
-				require.Equal(event.Nickname, "bob")
-				aliceDeliveredChan <- true
-			case *MessageSentEvent:
-				alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
-				require.Equal(event.Nickname, "bob")
-				aliceSentChan <- true
-			default:
-				alice.log.Debugf("ALICE event %v", event)
+			select {
+			case <-haltCh:
+				t.Log("haltCh closed!")
+				close(aliceKXFinishedChan)
+				close(aliceReceivedMessageChan)
+				close(aliceDeliveredChan)
+				close(aliceSentChan)
+				wait.Done()
+				return
+			case ev := <-alice.EventSink:
+				switch event := ev.(type) {
+				case *KeyExchangeCompletedEvent:
+					require.Nil(event.Err)
+					aliceKXFinishedChan <- true
+					alice.log.Debug("ALICE completed key exchange")
+				case *MessageReceivedEvent:
+					// fields: Nickname, Message, Timestamp
+					alice.log.Debugf("ALICE RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+					aliceReceivedMessageChan <- true
+				case *MessageDeliveredEvent:
+					require.Equal(event.Nickname, "bob")
+					aliceDeliveredChan <- true
+				case *MessageSentEvent:
+					alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
+					require.Equal(event.Nickname, "bob")
+					aliceSentChan <- true
+				default:
+					alice.log.Debugf("ALICE event %v", event)
+				}
 			}
 		}
 	}()
@@ -638,17 +664,14 @@ func TestTillDistress(t *testing.T) {
 	<-bobKXFinishedChan
 	<-aliceKXFinishedChan
 
-	// start a timer that fires after ... 40 minutes lol
-	// if the condition has fired, exit the loop
 
-	var wait sync.WaitGroup
-	wait.Add(2)
 	go func() {
 		i := 0
 		t.Logf("Alice has joined the chat")
 		for {
 			select {
-			case <-time.After(40* time.Minute):
+			case <-haltCh:
+				t.Log("haltCh closed!")
 				wait.Done()
 				return
 			default:
@@ -657,9 +680,12 @@ func TestTillDistress(t *testing.T) {
 			msg := fmt.Sprintf("hi bob, it's the %d time i call you...", i)
 			alice.SendMessage("bob", []byte(msg))
 			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
-			<-aliceSentChan
-			<-aliceDeliveredChan
-			<-bobReceivedMessageChan
+			if _, ok := <-aliceSentChan; !ok { continue }
+			alice.log.Debugf("aliceSentChan receive")
+			if _, ok := <-aliceDeliveredChan; !ok { continue }
+			alice.log.Debugf("aliceDeliverChan receive")
+			if _, ok := <-bobReceivedMessageChan; !ok { continue }
+			alice.log.Debugf("bobReceivedMessageChan receive")
 			i++
 		}
 	}()
@@ -668,7 +694,8 @@ func TestTillDistress(t *testing.T) {
 		t.Logf("Bob has joined the chat")
 		for {
 			select {
-			case <-time.After(40*time.Minute):
+			case <-haltCh:
+				t.Log("haltCh closed!")
 				wait.Done()
 				return
 			default:
@@ -677,15 +704,25 @@ func TestTillDistress(t *testing.T) {
 			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", i)
 			bob.SendMessage("alice", []byte(msg))
 			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
-			<-bobSentChan
-			<-bobDeliveredChan
-			<-aliceReceivedMessageChan
+			if _, ok := <-bobSentChan; !ok { continue }
+			bob.log.Debugf("bobSentChan receive")
+			if _, ok := <-bobDeliveredChan; !ok { continue }
+			bob.log.Debugf("bobDeliveredChan receive")
+			if _, ok := <-aliceReceivedMessageChan; !ok { continue }
+			bob.log.Debugf("aliceReceivedMessageChan receive")
 			i++
 		}
 	}()
-	wait.Wait()
 
-	// omfg success
+	// start a timer that fires after 2 minutes
+	go func() {
+		<-time.After(2*time.Minute)
+		close(haltCh)
+	}()
+
+	wait.Wait()
+	t.Log("Shutdown clients!")
 	alice.Shutdown()
 	bob.Shutdown()
+	t.Log("Clients Shutdown!")
 }

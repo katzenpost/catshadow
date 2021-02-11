@@ -714,20 +714,44 @@ func TestTillDistress(t *testing.T) {
 		}
 	}()
 
-	// start a timer that fires after 2 minutes
+	// start a timer that fires shortly before the testing framework will
+	// terminate the test suite. It is recommended to pass a larger -timeout
+	// value to thoroughly test message delivery
 	go func() {
-		<-time.After(5*time.Minute)
+		deadline, ok := t.Deadline()
+		if !ok { // called with -timeout 0, but do not run forever
+			deadline = time.Now().Add(24*time.Hour)
+		}
+		// when we will halt the test
+		testTimeout := deadline.Sub(time.Now().Add(5*time.Second))
+		// the maximum delay between receiving a message or failing this test
+		threshold := time.Minute
+		timer := time.After(testTimeout)
+		t.Logf("This test will run for %s", testTimeout)
+		for {
+			select {
+			case <-timer:
+				t.Log("Time is up!")
+				break
+			case <-time.After(threshold):
+				// require that both clients received a message within the last minute or fail
+				now := time.Now()
+				t.Logf("Alice last received %s ago", now.Sub(aliceLast))
+				t.Logf("Bob last received %s ago", now.Sub(bobLast))
+				if !assert.WithinDuration(now, bobLast, threshold) || !assert.WithinDuration(now, aliceLast, threshold) {
+					t.Fatalf("Failed to receive a message within %s", threshold)
+					break
+				}
+			}
+		}
 		close(haltCh)
+		return
 	}()
 
 	wait.Wait()
 	// assert at least some messages were received on both sides
-	now := time.Now()
-	require.NotEqual(i,0)
-	require.NotEqual(j,0)
-	// require that both clients received a message within the last minute
-	require.WithinDuration(now, bobLast, 1*time.Minute)
-	require.WithinDuration(now, aliceLast, 1*time.Minute)
+	require.GreaterOrEqual(i,1)
+	require.GreaterOrEqual(j,0)
 	t.Log("Shutdown clients!")
 	alice.Shutdown()
 	bob.Shutdown()

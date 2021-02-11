@@ -577,10 +577,8 @@ func TestTillDistress(t *testing.T) {
 	t.Log("Bob adds contact alice")
 	bob.NewContact("alice", sharedSecret)
 
-	bobKXFinishedChan := make(chan bool, 10)
-	bobReceivedMessageChan := make(chan bool, 10)
-	bobSentChan := make(chan bool, 10)
-	bobDeliveredChan := make(chan bool, 10)
+	bobKXFinishedChan := make(chan bool)
+	bobDeliveredChan := make(chan bool)
 
 	haltCh := make(chan interface{})
 
@@ -593,9 +591,7 @@ func TestTillDistress(t *testing.T) {
 			case <-haltCh:
 				t.Log("haltCh closed!")
 				close(bobKXFinishedChan)
-				close(bobReceivedMessageChan)
 				close(bobDeliveredChan)
-				close(bobSentChan)
 				wait.Done()
 				return
 			case ev := <-bob.EventSink:
@@ -607,14 +603,12 @@ func TestTillDistress(t *testing.T) {
 				case *MessageReceivedEvent:
 					// fields: Nickname, Message, Timestamp
 					bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
-					bobReceivedMessageChan <- true
 				case *MessageDeliveredEvent:
 					require.Equal(event.Nickname, "alice")
 					bobDeliveredChan <- true
 				case *MessageSentEvent:
 					bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
 					require.Equal(event.Nickname, "alice")
-					bobSentChan <- true
 				default:
 					bob.log.Debugf("BOB event %v", event)
 				}
@@ -622,19 +616,15 @@ func TestTillDistress(t *testing.T) {
 		}
 	}()
 
-	aliceKXFinishedChan := make(chan bool, 10)
-	aliceReceivedMessageChan := make(chan bool, 10)
-	aliceSentChan := make(chan bool, 10)
-	aliceDeliveredChan := make(chan bool, 10)
+	aliceKXFinishedChan := make(chan bool)
+	aliceDeliveredChan := make(chan bool)
 	go func() {
 		for {
 			select {
 			case <-haltCh:
 				t.Log("haltCh closed!")
 				close(aliceKXFinishedChan)
-				close(aliceReceivedMessageChan)
 				close(aliceDeliveredChan)
-				close(aliceSentChan)
 				wait.Done()
 				return
 			case ev := <-alice.EventSink:
@@ -646,14 +636,12 @@ func TestTillDistress(t *testing.T) {
 				case *MessageReceivedEvent:
 					// fields: Nickname, Message, Timestamp
 					alice.log.Debugf("ALICE RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
-					aliceReceivedMessageChan <- true
 				case *MessageDeliveredEvent:
 					require.Equal(event.Nickname, "bob")
 					aliceDeliveredChan <- true
 				case *MessageSentEvent:
 					alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
 					require.Equal(event.Nickname, "bob")
-					aliceSentChan <- true
 				default:
 					alice.log.Debugf("ALICE event %v", event)
 				}
@@ -674,18 +662,14 @@ func TestTillDistress(t *testing.T) {
 				t.Log("haltCh closed!")
 				wait.Done()
 				return
-			default:
+			case <-time.After(10*time.Second): // do not spam too fast
 			}
 
 			msg := fmt.Sprintf("hi bob, it's the %d time i call you...", i)
 			alice.SendMessage("bob", []byte(msg))
 			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
-			if _, ok := <-aliceSentChan; !ok { continue }
-			alice.log.Debugf("aliceSentChan receive")
 			if _, ok := <-aliceDeliveredChan; !ok { continue }
 			alice.log.Debugf("aliceDeliverChan receive")
-			if _, ok := <-bobReceivedMessageChan; !ok { continue }
-			alice.log.Debugf("bobReceivedMessageChan receive")
 			i++
 		}
 	}()
@@ -704,12 +688,8 @@ func TestTillDistress(t *testing.T) {
 			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", i)
 			bob.SendMessage("alice", []byte(msg))
 			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
-			if _, ok := <-bobSentChan; !ok { continue }
-			bob.log.Debugf("bobSentChan receive")
 			if _, ok := <-bobDeliveredChan; !ok { continue }
 			bob.log.Debugf("bobDeliveredChan receive")
-			if _, ok := <-aliceReceivedMessageChan; !ok { continue }
-			bob.log.Debugf("aliceReceivedMessageChan receive")
 			i++
 		}
 	}()

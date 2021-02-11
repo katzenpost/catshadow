@@ -741,7 +741,7 @@ func TestTillDistress(t *testing.T) {
 				t.Logf("Alice last received %s ago", now.Sub(aliceLast))
 				t.Logf("Bob last received %s ago", now.Sub(bobLast))
 				if !assert.WithinDuration(now, bobLast, threshold) || !assert.WithinDuration(now, aliceLast, threshold) {
-					t.Fatalf("Failed to receive a message within %s", threshold)
+					t.Errorf("Failed to receive a message within %s", threshold)
 					close(haltCh)
 					return
 				}

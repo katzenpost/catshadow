@@ -733,7 +733,8 @@ func TestTillDistress(t *testing.T) {
 			select {
 			case <-timer:
 				t.Log("Time is up!")
-				break
+				close(haltCh)
+				return
 			case <-time.After(threshold):
 				// require that both clients received a message within the last minute or fail
 				now := time.Now()
@@ -741,12 +742,11 @@ func TestTillDistress(t *testing.T) {
 				t.Logf("Bob last received %s ago", now.Sub(bobLast))
 				if !assert.WithinDuration(now, bobLast, threshold) || !assert.WithinDuration(now, aliceLast, threshold) {
 					t.Fatalf("Failed to receive a message within %s", threshold)
-					break
+					close(haltCh)
+					return
 				}
 			}
 		}
-		close(haltCh)
-		return
 	}()
 
 	wait.Wait()

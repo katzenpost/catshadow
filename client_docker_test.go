@@ -578,13 +578,17 @@ func TestTillDistress(t *testing.T) {
 	bob.NewContact("alice", sharedSecret)
 
 	bobKXFinishedChan := make(chan bool)
-	bobDeliveredChan := make(chan bool)
+	bobDeliveredChan := make(chan bool, 1)
+	bobReceivedChan := make(chan bool, 1)
 
 	haltCh := make(chan interface{})
 
 	var wait sync.WaitGroup
 	wait.Add(4)
 
+	// keep track of the last time a message was received by each client
+	aliceLast := time.Now()
+	bobLast := time.Now()
 	go func() {
 		for {
 			select {
@@ -592,6 +596,7 @@ func TestTillDistress(t *testing.T) {
 				t.Log("haltCh closed!")
 				close(bobKXFinishedChan)
 				close(bobDeliveredChan)
+				close(bobReceivedChan)
 				wait.Done()
 				return
 			case ev := <-bob.EventSink:
@@ -603,6 +608,8 @@ func TestTillDistress(t *testing.T) {
 				case *MessageReceivedEvent:
 					// fields: Nickname, Message, Timestamp
 					bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+					bobLast = time.Now()
+					bobReceivedChan <- true
 				case *MessageDeliveredEvent:
 					require.Equal(event.Nickname, "alice")
 					bobDeliveredChan <- true
@@ -617,7 +624,8 @@ func TestTillDistress(t *testing.T) {
 	}()
 
 	aliceKXFinishedChan := make(chan bool)
-	aliceDeliveredChan := make(chan bool)
+	aliceDeliveredChan := make(chan bool, 1)
+	aliceReceivedChan := make(chan bool, 1)
 	go func() {
 		for {
 			select {
@@ -625,6 +633,7 @@ func TestTillDistress(t *testing.T) {
 				t.Log("haltCh closed!")
 				close(aliceKXFinishedChan)
 				close(aliceDeliveredChan)
+				close(aliceReceivedChan)
 				wait.Done()
 				return
 			case ev := <-alice.EventSink:
@@ -636,6 +645,8 @@ func TestTillDistress(t *testing.T) {
 				case *MessageReceivedEvent:
 					// fields: Nickname, Message, Timestamp
 					alice.log.Debugf("ALICE RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+					aliceLast = time.Now()
+					aliceReceivedChan <- true
 				case *MessageDeliveredEvent:
 					require.Equal(event.Nickname, "bob")
 					aliceDeliveredChan <- true
@@ -653,8 +664,8 @@ func TestTillDistress(t *testing.T) {
 	<-aliceKXFinishedChan
 
 
+	i := 0
 	go func() {
-		i := 0
 		t.Logf("Alice has joined the chat")
 		for {
 			select {
@@ -662,19 +673,19 @@ func TestTillDistress(t *testing.T) {
 				t.Log("haltCh closed!")
 				wait.Done()
 				return
-			case <-time.After(10*time.Second): // do not spam too fast
+			default:
 			}
 
 			msg := fmt.Sprintf("hi bob, it's the %d time i call you...", i)
 			alice.SendMessage("bob", []byte(msg))
 			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
 			if _, ok := <-aliceDeliveredChan; !ok { continue }
-			alice.log.Debugf("aliceDeliverChan receive")
+			if _, ok := <-bobReceivedChan; !ok { continue }
 			i++
 		}
 	}()
+	j := 0
 	go func() {
-		i := 0
 		t.Logf("Bob has joined the chat")
 		for {
 			select {
@@ -689,8 +700,8 @@ func TestTillDistress(t *testing.T) {
 			bob.SendMessage("alice", []byte(msg))
 			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
 			if _, ok := <-bobDeliveredChan; !ok { continue }
-			bob.log.Debugf("bobDeliveredChan receive")
-			i++
+			if _, ok := <-aliceReceivedChan; !ok { continue }
+			j++
 		}
 	}()
 
@@ -701,6 +712,13 @@ func TestTillDistress(t *testing.T) {
 	}()
 
 	wait.Wait()
+	// assert at least some messages were received on both sides
+	now := time.Now()
+	require.NotEqual(i,0)
+	require.NotEqual(j,0)
+	// require that both clients received a message within the last minute
+	require.WithinDuration(now, bobLast, 1*time.Minute)
+	require.WithinDuration(now, aliceLast, 1*time.Minute)
 	t.Log("Shutdown clients!")
 	alice.Shutdown()
 	bob.Shutdown()

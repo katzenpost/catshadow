@@ -706,7 +706,7 @@ func TestTillDistress(t *testing.T) {
 			default:
 			}
 
-			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", i)
+			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", j)
 			bob.SendMessage("alice", []byte(msg))
 			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
 			if _, ok := <-bobDeliveredChan; !ok { continue }

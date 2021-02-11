@@ -35,6 +35,7 @@ import (
 	cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 func getClientState(c *Client) *State {
@@ -560,6 +561,14 @@ loop2:
 // This test must fail or else everything works
 func TestTillDistress(t *testing.T) {
 	require := require.New(t)
+	assert := assert.New(t)
+
+	if deadline, ok := t.Deadline(); ok {
+		timeLeft := deadline.Sub(time.Now())
+		if timeLeft < 4*time.Minute {
+			t.Skipf("Forget it, this test needs longer than %s to run to be useful", timeLeft)
+		}
+	}
 
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath, "alice", false)
@@ -707,7 +716,7 @@ func TestTillDistress(t *testing.T) {
 
 	// start a timer that fires after 2 minutes
 	go func() {
-		<-time.After(2*time.Minute)
+		<-time.After(5*time.Minute)
 		close(haltCh)
 	}()
 

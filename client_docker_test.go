@@ -596,8 +596,7 @@ func TestTillDistress(t *testing.T) {
 	wait.Add(4)
 
 	// keep track of the last time a message was received by each client
-	aliceLast := time.Now()
-	bobLast := time.Now()
+	var aliceLast, bobLast time.Time
 	go func() {
 		for {
 			select {
@@ -671,6 +670,8 @@ func TestTillDistress(t *testing.T) {
 
 	<-bobKXFinishedChan
 	<-aliceKXFinishedChan
+	aliceLast = time.Now()
+	bobLast = time.Now()
 
 
 	i := 0

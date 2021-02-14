@@ -735,6 +735,15 @@ func TestTillDistress(t *testing.T) {
 				t.Log("Time is up!")
 				close(haltCh)
 				return
+			case <-alice.HaltCh():
+				t.Errorf("Client exited prematurely!")
+				close(haltCh)
+				return
+			case <-bob.HaltCh():
+				t.Errorf("Client exited prematurely!")
+				close(haltCh)
+				return
+			case <-time.After(threshold):
 			case <-time.After(threshold):
 				// require that both clients received a message within the last minute or fail
 				now := time.Now()

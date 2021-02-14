@@ -744,7 +744,6 @@ func TestTillDistress(t *testing.T) {
 				close(haltCh)
 				return
 			case <-time.After(threshold):
-			case <-time.After(threshold):
 				// require that both clients received a message within the last minute or fail
 				now := time.Now()
 				t.Logf("Alice last received %s ago", now.Sub(aliceLast))

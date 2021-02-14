@@ -726,7 +726,7 @@ func TestTillDistress(t *testing.T) {
 		// when we will halt the test
 		testTimeout := deadline.Sub(time.Now().Add(5*time.Second))
 		// the maximum delay between receiving a message or failing this test
-		threshold := time.Minute
+		threshold := 5*time.Minute
 		timer := time.After(testTimeout)
 		t.Logf("This test will run for %s", testTimeout)
 		for {

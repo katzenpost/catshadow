@@ -118,6 +118,7 @@ type Contact struct {
 	// be sent
 	outbound *Queue
 	rtx      *time.Timer
+	ackID    [16]byte
 }
 
 // NewContact creates a new Contact or returns an error.

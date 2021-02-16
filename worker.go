@@ -95,6 +95,7 @@ func (c *Client) worker() {
 				op.responseChan <- c.contactNicknames
 			case *opRetransmit:
 				c.log.Debugf("RETRANSMISSION for %s", op.contact.Nickname)
+				op.contact.rtxCount++
 				c.sendMessage(op.contact)
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")

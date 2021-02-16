@@ -859,7 +859,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 				}
 				// keep track of the MessageID that has not been ACK'd yet
 				contact.ackID = *sentEvent.MessageID
-				contact.rtx = time.AfterFunc(sentEvent.ReplyETA*2, func() {
+				contact.rtx = time.AfterFunc(sentEvent.ReplyETA * (1+contact.rtxCount), func() {
 					c.opCh <- &opRetransmit{contact: contact}
 				})
 			}
@@ -910,6 +910,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 						// cancel the retransmission timer
 						if contact.rtx != nil {
 							contact.rtx.Stop()
+							contact.rtxCount = 0
 						}
 						// try to send the next message, if one exists
 						defer c.sendMessage(contact)

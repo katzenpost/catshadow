@@ -119,6 +119,7 @@ type Contact struct {
 	// be sent
 	outbound *Queue
 	rtx      *time.Timer
+	rtxCount time.Duration
 	ackID    [cConstants.MessageIDLength]byte
 }
 

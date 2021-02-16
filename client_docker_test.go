@@ -34,8 +34,8 @@ import (
 	"github.com/katzenpost/client"
 	cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func getClientState(c *Client) *State {
@@ -98,7 +98,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, username str
 	// XXX: this can time out because it is UNRELIABLE
 	tries := 3
 	err = nil
-	for ; tries >0; tries-- {
+	for ; tries > 0; tries-- {
 		catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, username, linkKey)
 		if err != client.ErrReplyTimeout || err == nil {
 			break
@@ -673,7 +673,6 @@ func TestTillDistress(t *testing.T) {
 	aliceLast = time.Now()
 	bobLast = time.Now()
 
-
 	i := 0
 	go func() {
 		t.Logf("Alice has joined the chat")
@@ -689,8 +688,12 @@ func TestTillDistress(t *testing.T) {
 			msg := fmt.Sprintf("hi bob, it's the %d time i call you...", i)
 			alice.SendMessage("bob", []byte(msg))
 			alice.log.Debugf("ALICE SENT MESSAGE to bob: %s", msg)
-			if _, ok := <-aliceDeliveredChan; !ok { continue }
-			if _, ok := <-bobReceivedChan; !ok { continue }
+			if _, ok := <-aliceDeliveredChan; !ok {
+				continue
+			}
+			if _, ok := <-bobReceivedChan; !ok {
+				continue
+			}
 			i++
 		}
 	}()
@@ -709,8 +712,12 @@ func TestTillDistress(t *testing.T) {
 			msg := fmt.Sprintf("hi alice, it's the %d time i call you...", j)
 			bob.SendMessage("alice", []byte(msg))
 			bob.log.Debugf("BOB SENT MESSAGE to alice: %s", msg)
-			if _, ok := <-bobDeliveredChan; !ok { continue }
-			if _, ok := <-aliceReceivedChan; !ok { continue }
+			if _, ok := <-bobDeliveredChan; !ok {
+				continue
+			}
+			if _, ok := <-aliceReceivedChan; !ok {
+				continue
+			}
 			j++
 		}
 	}()
@@ -721,12 +728,12 @@ func TestTillDistress(t *testing.T) {
 	go func() {
 		deadline, ok := t.Deadline()
 		if !ok { // called with -timeout 0, but do not run forever
-			deadline = time.Now().Add(24*time.Hour)
+			deadline = time.Now().Add(24 * time.Hour)
 		}
 		// when we will halt the test
-		testTimeout := deadline.Sub(time.Now().Add(5*time.Second))
+		testTimeout := deadline.Sub(time.Now().Add(5 * time.Second))
 		// the maximum delay between receiving a message or failing this test
-		threshold := 5*time.Minute
+		threshold := 5 * time.Minute
 		timer := time.After(testTimeout)
 		t.Logf("This test will run for %s", testTimeout)
 		for {
@@ -759,8 +766,8 @@ func TestTillDistress(t *testing.T) {
 
 	wait.Wait()
 	// assert at least some messages were received on both sides
-	require.GreaterOrEqual(i,1)
-	require.GreaterOrEqual(j,0)
+	require.GreaterOrEqual(i, 1)
+	require.GreaterOrEqual(j, 0)
 	t.Log("Shutdown clients!")
 	alice.Shutdown()
 	bob.Shutdown()

@@ -201,9 +201,8 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.pandaResult = s.PandaResult
 	c.reunionKeyExchange = s.ReunionKeyExchange
 	c.reunionResult = s.ReunionResult
-	c.ratchetMutex.Lock() // for correctness
+	c.ratchetMutex = new(sync.Mutex)
 	c.ratchet = r
-	c.ratchetMutex.Unlock()
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 	c.outbound = s.Outbound
 

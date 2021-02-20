@@ -700,6 +700,9 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
+	if len(message) + 4 > DoubleRatchetPayloadLength {
+		c.fatalErrCh <- fmt.Errorf("Message too large to transmit")
+	}
 	convoMesgID := MessageID{}
 	_, err := rand.Reader.Read(convoMesgID[:])
 	if err != nil {
@@ -740,7 +743,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	payload := [DoubleRatchetPayloadLength]byte{}
-	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
+	payloadLen := len(message)
+	if payloadLen > DoubleRatchetPayloadLength - 4 {
+		payloadLen = DoubleRatchetPayloadLength - 4
+	}
+	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])

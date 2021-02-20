@@ -1020,7 +1020,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			if payloadLen + 4 != uint32(len(plaintext)) {
 				return errInvalidPlaintextLength
 			}
-			message.Plaintext = plaintext[4 : payloadLen]
+			message.Plaintext = plaintext[4 : 4 + payloadLen]
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break

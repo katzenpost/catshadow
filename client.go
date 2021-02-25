@@ -964,7 +964,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()

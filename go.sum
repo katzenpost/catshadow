@@ -80,6 +80,8 @@ github.com/katzenpost/client v0.0.20 h1:CECadNPLf4BUuzfyBVzXkomEG+SDKWeQKVvv0VzD
 github.com/katzenpost/client v0.0.20/go.mod h1:FvQ2jOu6FpXV8vUF7gI53C0Qf0BumpWUtTlxVkCK1d8=
 github.com/katzenpost/client v0.0.21 h1:zRkPmk6G7qaAQrBiA5JwkREv13ZzwOjyph78IGRBg2U=
 github.com/katzenpost/client v0.0.21/go.mod h1:171+TRg4yu1XF9XQnJhlXqb0mc0IDD4Z95lzBqmnxAk=
+github.com/katzenpost/client v0.0.22-0.20210327192400-d862fe7573e8 h1:ZVWXbQ5enj9gQGoAXrAzttLqU8qOwhP849UN4F6i3LM=
+github.com/katzenpost/client v0.0.22-0.20210327192400-d862fe7573e8/go.mod h1:GZc4w4Rv/v+8tx2ui5ib+SBb5ccUcAuF3u5YY9HN5Vk=
 github.com/katzenpost/core v0.0.12 h1:rT4aKCyITD7GvEhEL1P8i8atr1/W3XvZYPfnQN+kLpQ=
 github.com/katzenpost/core v0.0.12/go.mod h1:VI2dGivI7H+dk6XDNjeO3s3naJqSnlLfvBwn+VzJ6gE=
 github.com/katzenpost/doubleratchet v0.0.9 h1:egw1ZN7rd23o0MnToa4B0GHatxsQrKQ0+umG4bLEWFQ=
@@ -100,6 +102,8 @@ github.com/katzenpost/minclient v0.0.10 h1:phxJ8uGi438MPyMe2lNNmup/9U7rB1WAd9muI
 github.com/katzenpost/minclient v0.0.10/go.mod h1:bj9fHAGaCgFGAnxB13K3qFJRCgd9RPc6hzZ+fV1cZ8A=
 github.com/katzenpost/minclient v0.0.11 h1:18tHi3OdiQusqDFdF7U709lSMG1Jqo6liG2ytcdcJlM=
 github.com/katzenpost/minclient v0.0.11/go.mod h1:bj9fHAGaCgFGAnxB13K3qFJRCgd9RPc6hzZ+fV1cZ8A=
+github.com/katzenpost/minclient v0.0.12-0.20210324173849-6c26ae3034be h1:LkqAzMtjQi498n1uKFbuGHyGZTwKuF41bi0/Xe9OSH0=
+github.com/katzenpost/minclient v0.0.12-0.20210324173849-6c26ae3034be/go.mod h1:bj9fHAGaCgFGAnxB13K3qFJRCgd9RPc6hzZ+fV1cZ8A=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
 github.com/katzenpost/noise v0.0.1 h1:xdabBTuulwwspmuvCHx25GffA+We14RaVLQadOcGiW8=

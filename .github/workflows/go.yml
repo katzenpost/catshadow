@@ -1,0 +1,58 @@
+name: test
+on: [push, pull_request]
+jobs:
+  setup:
+    strategy:
+      matrix:
+        go-version: [1.15.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Checkout catshadow
+        uses: actions/checkout@v2
+
+      - name: Checkout docker repo
+        uses: actions/checkout@v2
+        with:
+          repository: katzenpost/docker
+          path: docker
+
+      - name: Checkout authority repo
+        uses: actions/checkout@v2
+        with:
+          repository: katzenpost/authority
+          path: authority
+
+      - name: Checkout server repo
+        uses: actions/checkout@v2
+        with:
+          repository: katzenpost/server
+          path: server
+
+      - name: Build nonvoting authority docker image
+        run: |
+          cd authority && docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
+
+      - name: Build server docker image
+        run: |
+          cd server && docker build --no-cache -t katzenpost/server .
+
+      - name: Start the mixnet
+        run: |
+          cd docker/nonvoting_mixnet && docker-compose up -d
+
+      - name: docker ps
+        run: |
+          docker ps -a
+
+      - name: run the tests
+        run: GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
+
+      - name: Stop the mixnet
+        run: |
+          cd docker/nonvoting_mixnet && docker-compose down

@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"time"
 
+	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
@@ -40,13 +40,6 @@ const (
 	nonceSize = 24
 )
 
-// Message encapsulates message that is sent or received.
-type Message struct {
-	Plaintext []byte
-	Timestamp time.Time
-	Outbound  bool
-}
-
 // State is the struct type representing the Client's state
 // which is encrypted and persisted to disk.
 type State struct {
@@ -56,6 +49,7 @@ type State struct {
 	Provider            string
 	LinkKey             *ecdh.PrivateKey
 	Conversations       map[string]map[MessageID]*Message
+	Blob                map[string][]byte
 }
 
 // StateWriter takes ownership of the Client's encrypted statefile
@@ -65,9 +59,10 @@ type StateWriter struct {
 
 	log *logging.Logger
 
-	stateCh   chan []byte
+	stateCh   chan *memguard.LockedBuffer
 	stateFile string
 
+	// TODO: memguard.LockedBuffer
 	key *[32]byte
 }
 
@@ -146,7 +141,7 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
 	worker := &StateWriter{
 		log:       log,
-		stateCh:   make(chan []byte),
+		stateCh:   make(chan *memguard.LockedBuffer),
 		stateFile: stateFile,
 	}
 	key := stretchKey(passphrase)
@@ -164,7 +159,7 @@ func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*
 	key := stretchKey(passphrase)
 	worker := &StateWriter{
 		log:       log,
-		stateCh:   make(chan []byte),
+		stateCh:   make(chan *memguard.LockedBuffer),
 		stateFile: stateFile,
 		key:       key,
 	}
@@ -188,11 +183,12 @@ func (w *StateWriter) worker() {
 			w.log.Debugf("Terminating gracefully.")
 			return
 		case newState := <-w.stateCh:
-			err := w.writeState(newState)
+			err := w.writeState(newState.Bytes())
 			if err != nil {
 				w.log.Errorf("Failure to write state to disk: %s", err)
 				panic(err)
 			}
+			newState.Destroy()
 		}
 	}
 }

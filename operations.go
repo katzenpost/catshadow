@@ -18,14 +18,20 @@
 
 package catshadow
 
-
 type opAddContact struct {
 	name         string
 	sharedSecret []byte
 }
 
 type opRemoveContact struct {
-	name string
+	name         string
+	responseChan chan error
+}
+
+type opRenameContact struct {
+	oldname      string
+	newname      string
+	responseChan chan error
 }
 
 type opSendMessage struct {
@@ -36,6 +42,11 @@ type opSendMessage struct {
 
 type opGetContacts struct {
 	responseChan chan map[string]*Contact
+}
+
+type opGetConversation struct {
+	name         string
+	responseChan chan Messages
 }
 
 type opRetransmit struct {

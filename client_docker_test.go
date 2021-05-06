@@ -83,7 +83,8 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, username str
 	cfg, err := catshadowCfg.ClientConfig()
 	require.NoError(err)
 
-	cfg, linkKey := client.AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
@@ -416,6 +417,13 @@ and can readily scale to millions of users.
 	aliceConvesation := alice.GetConversation("bob")
 	for i, mesg := range aliceConvesation {
 		alice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	}
+
+	// Test sorted conversation and message delivery status
+	aliceSortedConvesation := alice.GetSortedConversation("bob")
+	for _, msg := range aliceSortedConvesation {
+		require.True(msg.Sent)
+		require.True(msg.Delivered)
 	}
 
 	bob.log.Debug("LOADING BOB'S CONVERSATION")
@@ -772,4 +780,237 @@ func TestTillDistress(t *testing.T) {
 	alice.Shutdown()
 	bob.Shutdown()
 	t.Log("Clients Shutdown!")
+}
+
+func TestDockerAddRemoveContact(t *testing.T) {
+	require := require.New(t)
+
+	a := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+	b := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+
+	s := [8]byte{}
+	_, err := rand.Reader.Read(s[:])
+	require.NoError(err)
+
+	a.NewContact("b", s[:])
+	b.NewContact("a", s[:])
+
+loop1:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop1
+		default:
+		}
+	}
+
+loop2:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop2
+		default:
+		}
+	}
+
+	t.Log("Sending message to b")
+	a.SendMessage("b", []byte{0})
+loop3:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageDeliveredEvent:
+			t.Log("Message delivered to b")
+			if event.Nickname == "b" {
+				break loop3
+			} else {
+				t.Log(event)
+			}
+		default:
+		}
+	}
+
+	t.Log("Sending message to a")
+	b.SendMessage("a", []byte{0})
+
+loop4:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *MessageDeliveredEvent:
+			t.Log("Message delivered to a")
+			if event.Nickname == "a" {
+				break loop4
+			}
+		default:
+		}
+	}
+
+	t.Log("Removing contact b")
+	err = a.RemoveContact("b")
+	require.NoError(err)
+	require.Equal(len(a.GetContacts()), 0)
+
+	t.Log("Removing contact b again, checking for err")
+	err = a.RemoveContact("b")
+	require.Error(err, errContactNotFound)
+
+	c := a.GetConversation("b")
+	require.Equal(len(c), 0)
+	// verify that contact data is gone
+	t.Log("Sending message to b, must fail")
+	a.SendMessage("b", []byte("must fail"))
+loop5:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageNotSentEvent:
+			if event.Nickname == "b" {
+				break loop5
+			}
+		default:
+		}
+	}
+
+	a.Shutdown()
+	b.Shutdown()
+}
+
+func TestDockerRenameContact(t *testing.T) {
+	require := require.New(t)
+
+	a := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+	b := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+
+	s := [8]byte{}
+	_, err := rand.Reader.Read(s[:])
+	require.NoError(err)
+
+	a.NewContact("b", s[:])
+	b.NewContact("a", s[:])
+
+loop1:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop1
+		default:
+		}
+	}
+
+loop2:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop2
+		default:
+		}
+	}
+
+	t.Log("Sending message to b")
+	a.SendMessage("b", []byte{0})
+loop3:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageDeliveredEvent:
+			t.Log("Message delivered to b")
+			if event.Nickname == "b" {
+				break loop3
+			} else {
+				t.Log(event)
+			}
+		default:
+		}
+	}
+
+	t.Log("Sending message to a")
+	b.SendMessage("a", []byte{0})
+
+loop4:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *MessageDeliveredEvent:
+			t.Log("Message delivered to a")
+			if event.Nickname == "a" {
+				break loop4
+			}
+		default:
+		}
+	}
+
+	t.Log("Renaming contact b")
+	err = a.RenameContact("b", "b2")
+	require.NoError(err)
+
+	c := a.GetConversation("b")
+	require.Equal(len(c), 0)
+
+	// verify that contact data is gone
+	t.Log("Sending message to b, must fail")
+	a.SendMessage("b", []byte("must fail"))
+
+loop5:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageNotSentEvent:
+			if event.Nickname == "b" {
+				break loop5
+			}
+		default:
+		}
+	}
+
+	// send message to the renamed contact
+	a.SendMessage("b2", []byte{0})
+loop6:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageDeliveredEvent:
+			t.Log("Message delivered to b2")
+			if event.Nickname == "b2" {
+				break loop6
+			} else {
+				t.Log(event)
+			}
+		default:
+		}
+	}
+loop7:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by b2")
+			if event.Nickname == "a" {
+				break loop7
+			} else {
+				t.Log(event)
+			}
+		default:
+		}
+	}
+
+	// verify that b2 has received 2 messages
+	c = b.GetConversation("a")
+	require.Equal(len(c), 2)
+
+	// clear conversation history
+	b.WipeConversation("a")
+	c = b.GetConversation("a")
+	require.Equal(len(c), 0)
+
+	a.Shutdown()
+	b.Shutdown()
 }

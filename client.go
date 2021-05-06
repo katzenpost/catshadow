@@ -23,6 +23,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/awnumar/memguard"
+	"sort"
 	"sync"
 	"time"
 
@@ -32,6 +34,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
@@ -45,7 +48,11 @@ import (
 )
 
 var (
-	errTrialDecryptionFailed = errors.New("Trial Decryption Failed")
+	errTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
+	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
+	errContactNotFound        = errors.New("Contact not found")
+	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
+	errBlobNotFound           = errors.New("Blob not found in store")
 )
 
 // Client is the mixnet client which interacts with other clients
@@ -66,11 +73,13 @@ type Client struct {
 	stateWorker         *StateWriter
 	linkKey             *ecdh.PrivateKey
 	user                string
+	blob                map[string][]byte
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact
 	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
 	conversations       map[string]map[MessageID]*Message
 	conversationsMutex  *sync.Mutex
+	blobMutex           *sync.Mutex
 
 	client  *client.Client
 	session *client.Session
@@ -95,6 +104,7 @@ type queuedSpoolCommand struct {
 // the previously saved state for an existing Client.
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
+		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
 		User:          user,
@@ -105,7 +115,6 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 	if err != nil {
 		return nil, err
 	}
-	c.save()
 	err = c.CreateRemoteSpool()
 	if err != nil {
 		return nil, err
@@ -121,6 +130,9 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	if err != nil {
 		return nil, err
 	}
+	if state.Blob == nil {
+		state.Blob = make(map[string][]byte)
+	}
 	c := &Client{
 		eventCh:             channels.NewInfiniteChannel(),
 		EventSink:           make(chan interface{}),
@@ -135,6 +147,8 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		linkKey:             state.LinkKey,
 		user:                state.User,
 		conversations:       state.Conversations,
+		blob:                state.Blob,
+		blobMutex:           new(sync.Mutex),
 		conversationsMutex:  new(sync.Mutex),
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
@@ -229,7 +243,7 @@ func (c *Client) restartSending() {
 		if !contact.IsPending {
 			if _, err := contact.outbound.Peek(); err == nil {
 				// prod worker to start draining contact outbound queue
-				defer func() { c.opCh <- &opRetransmit{contact: contact} }()
+				c.opCh <- &opRetransmit{contact: contact}
 			}
 		}
 	}
@@ -359,6 +373,26 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	return err
 }
 
+func (c *Client) doGetConversation(nickname string, responseChan chan Messages) {
+	var msg Messages
+
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	cc, ok := c.conversations[nickname]
+	if !ok {
+		close(responseChan)
+		return
+	}
+	for _, m := range cc {
+		msg = append(msg, m)
+	}
+	// do not block the worker
+	go func() {
+		sort.Sort(msg)
+		responseChan <- msg
+	}()
+}
+
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	// Use PANDA
 	pandaCfg := c.session.GetPandaConfig()
@@ -441,7 +475,7 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 	return nil
 }
 
-// XXX do we even need this method?
+// GetContacts returns the contacts map.
 func (c *Client) GetContacts() map[string]*Contact {
 	getContactsOp := opGetContacts{
 		responseChan: make(chan map[string]*Contact),
@@ -451,17 +485,30 @@ func (c *Client) GetContacts() map[string]*Contact {
 }
 
 // RemoveContact removes a contact from the Client's state.
-func (c *Client) RemoveContact(nickname string) {
-	c.opCh <- &opRemoveContact{
-		name: nickname,
+func (c *Client) RemoveContact(nickname string) error {
+	removeContactOp := &opRemoveContact{
+		name:         nickname,
+		responseChan: make(chan error),
 	}
+	c.opCh <- removeContactOp
+	return <-removeContactOp.responseChan
 }
 
-func (c *Client) doContactRemoval(nickname string) {
+// RenameContact changes the name of a contact.
+func (c *Client) RenameContact(oldname, newname string) error {
+	renameContactOp := &opRenameContact{
+		oldname:      oldname,
+		newname:      newname,
+		responseChan: make(chan error),
+	}
+	c.opCh <- renameContactOp
+	return <-renameContactOp.responseChan
+}
+
+func (c *Client) doContactRemoval(nickname string) error {
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
-		c.log.Errorf("contact removal failed, %s not found in contacts", nickname)
-		return
+		return errContactNotFound
 	}
 	if contact.IsPending {
 		if contact.pandaShutdownChan != nil {
@@ -470,7 +517,34 @@ func (c *Client) doContactRemoval(nickname string) {
 	}
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
-	c.save()
+	c.WipeConversation(nickname) // calls c.save()
+	return nil
+}
+
+func (c *Client) doContactRename(oldname, newname string) error {
+	// check to see if oldname exists and newname does not exist
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	contact, ok := c.contactNicknames[oldname]
+	if !ok {
+		return errors.New("Contact not found")
+	}
+	if _, ok := c.contactNicknames[newname]; ok {
+		return errors.New("Contact already exists")
+	}
+	contact.Nickname = newname
+	c.contactNicknames[newname] = contact
+	c.conversations[newname] = c.conversations[oldname]
+	c.blobMutex.Lock()
+	if b, ok := c.blob["avatar://"+oldname]; ok {
+		c.blob["avatar://"+newname] = b
+		delete(c.blob, "avatar://"+oldname)
+	}
+	c.blobMutex.Unlock()
+
+	delete(c.conversations, oldname)
+	delete(c.contactNicknames, oldname)
+	return nil
 }
 
 func (c *Client) save() {
@@ -482,7 +556,7 @@ func (c *Client) save() {
 	c.stateWorker.stateCh <- serialized
 }
 
-func (c *Client) marshal() ([]byte, error) {
+func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
@@ -495,10 +569,14 @@ func (c *Client) marshal() ([]byte, error) {
 		User:                c.user,
 		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
+		Blob:                c.blob,
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
-	return cbor.Marshal(s)
+	ms := memguard.NewStream()
+	e := cbor.NewEncoder(ms)
+	e.Encode(s)
+	return ms.Flush()
 }
 
 func (c *Client) stopContactTimers() {
@@ -699,6 +777,10 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
+	if len(message)+4 > DoubleRatchetPayloadLength {
+		c.fatalErrCh <- fmt.Errorf("Message too large to transmit")
+		return MessageID{}
+	}
 	convoMesgID := MessageID{}
 	_, err := rand.Reader.Read(convoMesgID[:])
 	if err != nil {
@@ -715,37 +797,48 @@ func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 }
 
 func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message []byte) {
+	contact, ok := c.contactNicknames[nickname]
+	if !ok {
+		c.log.Errorf("contact %s not found", nickname)
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       errContactNotFound,
+		}
+		return
+	}
+	if contact.IsPending {
+		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       errPendingKeyExchange,
+		}
+		return
+	}
 	outMessage := Message{
 		Plaintext: message,
 		Timestamp: time.Now(),
 		Outbound:  true,
 	}
-	c.conversationsMutex.Lock()
-	_, ok := c.conversations[nickname]
-	if !ok {
-		c.conversations[nickname] = make(map[MessageID]*Message)
-	}
-	c.conversations[nickname][convoMesgID] = &outMessage
-	c.conversationsMutex.Unlock()
 
-	contact, ok := c.contactNicknames[nickname]
-	if !ok {
-		c.log.Errorf("contact %s not found", nickname)
-		return
+	payload := make([]byte, DoubleRatchetPayloadLength)
+	payloadLen := len(message)
+	if payloadLen > DoubleRatchetPayloadLength-4 {
+		payloadLen = DoubleRatchetPayloadLength - 4
 	}
-	if contact.IsPending {
-		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
-		return
-	}
-
-	payload := [DoubleRatchetPayloadLength]byte{}
-	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
+	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
 		return
 	}
 	contact.ratchetMutex.Unlock()
@@ -753,6 +846,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
 		return
 	}
 
@@ -766,8 +864,22 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	if err := contact.outbound.Push(item); err != nil {
 		c.log.Debugf("Failed to enqueue message!")
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
 		return
 	}
+
+	// update the conversation history
+	c.conversationsMutex.Lock()
+	_, ok = c.conversations[nickname]
+	if !ok {
+		c.conversations[nickname] = make(map[MessageID]*Message)
+	}
+	c.conversations[nickname][convoMesgID] = &outMessage
+	c.conversationsMutex.Unlock()
 	c.save()
 }
 
@@ -837,7 +949,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			// since the retransmission occurs per contact
 			// set a timer on the contact
 			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
-				panic("contact not found")
+				return
 			} else {
 				if sentEvent.Err != nil {
 					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
@@ -848,6 +960,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 					c.eventCh.In() <- &MessageNotSentEvent{
 						Nickname:  tp.Nickname,
 						MessageID: tp.MessageID,
+						Err:       sentEvent.Err,
 					}
 					c.opCh <- &opRetransmit{contact: contact}
 					return
@@ -865,6 +978,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			}
 
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
+			c.setMessageSent(tp.Nickname, tp.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
 				MessageID: tp.MessageID,
@@ -915,9 +1029,10 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 						defer c.sendMessage(contact)
 					}
 				} else {
-					panic("contact is missing")
+					return
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
+				c.setMessageDelivered(tp.Nickname, tp.MessageID)
 				c.eventCh.In() <- &MessageDeliveredEvent{
 					Nickname:  tp.Nickname,
 					MessageID: tp.MessageID,
@@ -956,10 +1071,11 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
+				c.save()
 			default:
 				panic("received spool response for MessageID not requested yet")
 			}
@@ -971,16 +1087,53 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	}
 }
 
+// GetConversation returns a map of messages between a contact
 func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations[nickname]
 }
 
+// WipeConversation removes all messages between a contact
+func (c *Client) WipeConversation(nickname string) {
+	c.conversationsMutex.Lock()
+	defer c.save()
+	defer c.conversationsMutex.Unlock()
+
+	if _, ok := c.conversations[nickname]; !ok {
+		return
+	}
+
+	for k, m := range c.conversations[nickname] {
+		utils.ExplicitBzero(m.Plaintext)
+		m.Timestamp = time.Time{}
+		m.Outbound = false
+		m.Sent = false
+		m.Delivered = false
+		delete(c.conversations[nickname], k)
+	}
+	delete(c.conversations, nickname)
+}
+
+// GetConversation returns a map of all the maps of messages between a contact
 func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations
+}
+
+// GetSortedConversation returns Messages (a slice of *Message, sorted by Timestamp)
+func (c *Client) GetSortedConversation(nickname string) Messages {
+	getConversationOp := opGetConversation{
+		name:         nickname,
+		responseChan: make(chan Messages),
+	}
+	c.opCh <- &getConversationOp
+	m, ok := <-getConversationOp.responseChan
+	if !ok {
+		return nil
+	}
+	return m
 }
 
 func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) error {
@@ -1003,7 +1156,14 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			// message decrypted successfully
 			decrypted = true
 			nickname = contact.Nickname
+			if len(plaintext) < 4 {
+				// short plaintext received
+				return errInvalidPlaintextLength
+			}
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
+			if payloadLen+4 > uint32(len(plaintext)) {
+				return errInvalidPlaintextLength
+			}
 			message.Plaintext = plaintext[4 : 4+payloadLen]
 			message.Timestamp = time.Now()
 			message.Outbound = false
@@ -1028,6 +1188,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		c.conversations[nickname][convoMesgID] = &message
 		c.conversationsMutex.Unlock()
+		c.save()
 
 		c.eventCh.In() <- &MessageReceivedEvent{
 			Nickname:  nickname,
@@ -1038,4 +1199,66 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
 	return errTrialDecryptionFailed
+}
+
+// setMessageSent sets Message MessageID Sent = true and returns true on success
+func (c *Client) setMessageSent(nickname string, msgId MessageID) bool {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	if ch, ok := c.conversations[nickname]; ok {
+		if m, ok := ch[msgId]; ok {
+			m.Sent = true
+			return true
+		}
+	}
+
+	return false
+}
+
+// setMessageDelivered sets Message MessageID Delivered = true and returns true on success
+func (c *Client) setMessageDelivered(nickname string, msgId MessageID) bool {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	if ch, ok := c.conversations[nickname]; ok {
+		if m, ok := ch[msgId]; ok {
+			m.Delivered = true
+			return true
+		}
+	}
+
+	return false
+}
+
+// AddBlob adds a []byte blob identified by id string to the clients storage
+func (c *Client) AddBlob(id string, blob []byte) error {
+	// if Client was constructed from an old state file, blob is nil
+	c.blobMutex.Lock()
+	c.blob[id] = blob
+	c.blobMutex.Unlock()
+	c.save()
+	return nil
+}
+
+// DeleteBlob removes the blob identified by id string or error
+func (c *Client) DeleteBlob(id string) error {
+	c.blobMutex.Lock()
+	defer c.blobMutex.Unlock()
+	_, ok := c.blob[id]
+	if !ok {
+		return errBlobNotFound
+	}
+	delete(c.blob, id)
+	c.save()
+	return nil
+}
+
+// GetBlob returns the blob identified by id string or error
+func (c *Client) GetBlob(id string) ([]byte, error) {
+	c.blobMutex.Lock()
+	defer c.blobMutex.Unlock()
+	b, ok := c.blob[id]
+	if !ok {
+		return nil, errBlobNotFound
+	}
+	return b, nil
 }

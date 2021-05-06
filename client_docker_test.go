@@ -23,9 +23,6 @@ package catshadow
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -51,20 +48,6 @@ func getClientState(c *Client) *State {
 		Provider:            c.client.Provider(),
 		Conversations:       c.GetAllConversations(),
 	}
-}
-
-func createRandomStateFile(t *testing.T) string {
-	require := require.New(t)
-
-	tmpDir, err := ioutil.TempDir("", "catshadow_test")
-	require.NoError(err)
-	id := [6]byte{}
-	_, err = rand.Reader.Read(id[:])
-	require.NoError(err)
-	stateFile := filepath.Join(tmpDir, fmt.Sprintf("%x.catshadow.state", id))
-	_, err = os.Stat(stateFile)
-	require.True(os.IsNotExist(err))
-	return stateFile
 }
 
 func createCatshadowClientWithState(t *testing.T, stateFile string, username string, useReunion bool) *Client {
@@ -785,8 +768,8 @@ func TestTillDistress(t *testing.T) {
 func TestDockerAddRemoveContact(t *testing.T) {
 	require := require.New(t)
 
-	a := createCatshadowClientWithState(t, createRandomStateFile(t), false)
-	b := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+	a := createCatshadowClientWithState(t, createRandomStateFile(t), "a", false)
+	b := createCatshadowClientWithState(t, createRandomStateFile(t), "b", false)
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])
@@ -883,8 +866,8 @@ loop5:
 func TestDockerRenameContact(t *testing.T) {
 	require := require.New(t)
 
-	a := createCatshadowClientWithState(t, createRandomStateFile(t), false)
-	b := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+	a := createCatshadowClientWithState(t, createRandomStateFile(t), "a", false)
+	b := createCatshadowClientWithState(t, createRandomStateFile(t), "b", false)
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])

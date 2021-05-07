@@ -48,7 +48,7 @@ jobs:
 
       - name: docker ps
         run: |
-          docker ps -a
+          docker ps -a && sleep 30 && docker ps -a
 
       - name: run the tests
         run: GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker

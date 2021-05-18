@@ -44,7 +44,7 @@ jobs:
 
       - name: Start the mixnet
         run: |
-          cd docker/nonvoting_mixnet && docker-compose up -d --verbose
+          cd docker/nonvoting_mixnet && docker-compose --verbose up -d
 
       - name: docker ps
         run: |

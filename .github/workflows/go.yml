@@ -42,13 +42,9 @@ jobs:
         run: |
           cd server && docker build --no-cache -t katzenpost/server .
 
-      - name: Copy the /conf path into the docker container
-        run: |
-          cp -r /home/runner/conf /github/home
-
       - name: Start the mixnet
         run: |
-          cd docker/nonvoting_mixnet && docker-compose --verbose up -d
+          cd docker/nonvoting_mixnet && cp -r conf /home/runner/work/_temp/_github_home/ && docker-compose --verbose up -d
 
       - name: docker ps
         run: |

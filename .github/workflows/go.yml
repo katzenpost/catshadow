@@ -44,7 +44,11 @@ jobs:
 
       - name: Start the mixnet
         run: |
-          cd docker/nonvoting_mixnet && cp -r conf /home/runner/work/_temp/_github_home/ && docker-compose --verbose up -d
+          cd docker/nonvoting_mixnet && docker-compose --verbose up -d
+
+      - name: List contents of ./conf
+        run: |
+          find docker
 
       - name: docker ps
         run: |

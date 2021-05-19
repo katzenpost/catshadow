@@ -8,6 +8,11 @@ jobs:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: actions/checkout@v2
+        with:
+          repository: katzenpost/docker
+          path: docker
+
       - name: Install Go
         uses: actions/setup-go@v1
         with:
@@ -15,12 +20,6 @@ jobs:
 
       - name: Checkout catshadow
         uses: actions/checkout@v2
-
-      - name: Checkout docker repo
-        uses: actions/checkout@v2
-        with:
-          repository: katzenpost/docker
-          path: docker
 
       - name: List contents of /home/runner/work
         run: |
@@ -46,29 +45,9 @@ jobs:
         run: |
           cd server && docker build --no-cache -t katzenpost/server .
 
-      - name: List contents of /home/runner/work
-        run: |
-          find /home/runner/work
-
-      - name: Copy files to the docker runner
-        run: |
-          cp -r docker/nonvoting_mixnet/conf /home/runner/work/_temp_/_github_home
-
       - name: Start the mixnet
-        uses: actions/checkout@v2
-        with:
-          repository: katzenpost/docker
-          path: docker
         run: |
           cd docker/nonvoting_mixnet && docker-compose --verbose up -d
-
-      - name: List contents of docker
-        run: |
-          find /home/runner/work
-
-      - name: docker ps
-        run: |
-          docker ps -a && sleep 30 && docker ps -a
 
       - name: run the tests
         run: GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker

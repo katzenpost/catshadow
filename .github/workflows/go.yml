@@ -27,7 +27,7 @@ jobs:
           find /home/runner/work
 
       - name: Copy files to the docker runner
-        rune: |
+        run: |
           cp -r docker/nonvoting_mixnet/conf /home/runner/work/_temp_/_github_home
 
       - name: Checkout authority repo

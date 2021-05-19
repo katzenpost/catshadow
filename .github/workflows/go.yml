@@ -8,11 +8,6 @@ jobs:
         os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
-        with:
-          repository: katzenpost/docker
-          path: docker
-
       - name: Install Go
         uses: actions/setup-go@v1
         with:
@@ -21,9 +16,11 @@ jobs:
       - name: Checkout catshadow
         uses: actions/checkout@v2
 
-      - name: List contents of /home/runner/work
-        run: |
-          find /home/runner/work
+      - name: Checkout docker repo
+        uses: actions/checkout@v2
+        with:
+          repository: katzenpost/docker
+          path: docker
 
       - name: Checkout authority repo
         uses: actions/checkout@v2

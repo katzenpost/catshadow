@@ -26,10 +26,6 @@ jobs:
         run: |
           find /home/runner/work
 
-      - name: Copy files to the docker runner
-        run: |
-          cp -r docker/nonvoting_mixnet/conf /home/runner/work/_temp_/_github_home
-
       - name: Checkout authority repo
         uses: actions/checkout@v2
         with:
@@ -49,6 +45,14 @@ jobs:
       - name: Build server docker image
         run: |
           cd server && docker build --no-cache -t katzenpost/server .
+
+      - name: List contents of /home/runner/work
+        run: |
+          find /home/runner/work
+
+      - name: Copy files to the docker runner
+        run: |
+          cp -r docker/nonvoting_mixnet/conf /home/runner/work/_temp_/_github_home
 
       - name: Start the mixnet
         run: |

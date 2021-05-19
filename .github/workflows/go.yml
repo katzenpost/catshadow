@@ -55,6 +55,10 @@ jobs:
           cp -r docker/nonvoting_mixnet/conf /home/runner/work/_temp_/_github_home
 
       - name: Start the mixnet
+        uses: actions/checkout@v2
+        with:
+          repository: katzenpost/docker
+          path: docker
         run: |
           cd docker/nonvoting_mixnet && docker-compose --verbose up -d
 

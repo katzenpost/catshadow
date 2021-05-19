@@ -22,6 +22,14 @@ jobs:
           repository: katzenpost/docker
           path: docker
 
+      - name: List contents of /home/runner/work
+        run: |
+          find /home/runner/work
+
+      - name: Copy files to the docker runner
+        rune: |
+          cp -r docker/nonvoting_mixnet/conf /home/runner/work/_temp_/_github_home
+
       - name: Checkout authority repo
         uses: actions/checkout@v2
         with:
@@ -44,12 +52,11 @@ jobs:
 
       - name: Start the mixnet
         run: |
-          cp -r docker/nonvoting_mixnet/conf /github/workspace &&
           cd docker/nonvoting_mixnet && docker-compose --verbose up -d
 
       - name: List contents of docker
         run: |
-          find /github/workspace
+          find /home/runner/work
 
       - name: docker ps
         run: |

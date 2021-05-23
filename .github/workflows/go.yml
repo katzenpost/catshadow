@@ -42,6 +42,9 @@ jobs:
         run: |
           cd server && docker build --no-cache -t katzenpost/server .
 
+      - name: Fix permissions
+        run: chmod -R og-rwx docker/nonvoting_mixnet/conf
+
       - name: Start the mixnet
         run: |
           cd docker/nonvoting_mixnet && docker-compose --verbose up -d

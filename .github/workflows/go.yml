@@ -34,6 +34,10 @@ jobs:
           repository: katzenpost/server
           path: server
 
+      - name: Check limits
+        run: |
+          ulimit -a
+
       - name: Build nonvoting authority docker image
         run: |
           cd authority && docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
@@ -50,7 +54,7 @@ jobs:
           cd docker/nonvoting_mixnet && docker-compose --verbose up -d
 
       - name: run the tests
-        run: ulimit -l unlimited && GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
+        run: GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
 
       - name: Stop the mixnet
         run: |

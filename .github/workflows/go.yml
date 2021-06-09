@@ -54,7 +54,7 @@ jobs:
           cd docker/nonvoting_mixnet && docker-compose --verbose up -d
 
       - name: run the tests
-        run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker"
+        run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker -timeout 60m"
 
       - name: Stop the mixnet
         run: |

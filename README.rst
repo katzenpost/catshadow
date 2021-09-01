@@ -1,3 +1,6 @@
+.. SPDX-FileCopyrightText: 2020 David Stainton <dawuud@riseup.net>
+.. SPDX-License-Identifier: AGPL-3.0-or-later
+
 
 .. image:: https://travis-ci.org/katzenpost/catshadow.svg?branch=master
   :target: https://travis-ci.org/katzenpost/catshadow
